@@ -289,3 +289,23 @@ def predict_batch():
     except Exception as e:
         print(f"[predict_batch error] {e}")
         return jsonify({"error": f"Batch prediction failed: {str(e)}"}), 500
+
+
+# ──────────────────────────────────────────────────────────────────
+# POST /api/obd/agent-data  [jwt_required]
+# Frontend pushes live OBD readings collected via Web Serial API.
+# obd_reader.update_data() stores it and broadcasts via SocketIO.
+# ──────────────────────────────────────────────────────────────────
+@predict_bp.route('/obd/agent-data', methods=['POST'])
+@jwt_required
+def obd_agent_data():
+    try:
+        from obd_reader import update_data
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+        update_data(data)
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        print(f"[obd_agent_data error] {e}")
+        return jsonify({"error": str(e)}), 500
