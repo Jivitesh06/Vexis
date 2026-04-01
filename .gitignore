@@ -1,0 +1,13 @@
+backend/.env
+*.env
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+venv/
+.venv/
+env/
+.DS_Store
+Thumbs.db
+*.log
+requirements_freeze.txt

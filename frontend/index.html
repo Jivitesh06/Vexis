@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Vexis — AI Vehicle Health Intelligence</title>
+  <meta name="description" content="AI-powered OBD-II vehicle health scoring. Engine, fuel, thermal, efficiency and driving analysis in real-time."/>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="css/global.css"/>
+  <link rel="stylesheet" href="css/landing.css"/>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body>
+<div class="grid-bg"></div>
+
+<!-- HEADER -->
+<header id="header">
+  <div class="header-inner">
+    <a href="#" class="logo">
+      <svg class="logo-icon" viewBox="0 0 48 48" fill="none">
+        <polygon points="24,2 44,13 44,35 24,46 4,35 4,13" stroke="#00e5ff" stroke-width="2" fill="rgba(0,229,255,0.06)"/>
+        <polyline points="8,26 13,26 17,16 21,32 25,22 28,28 31,28 35,18 39,24" stroke="#00e5ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      </svg>
+      <div class="logo-text-wrap">
+        <span class="logo-name">VEXIS</span>
+        <span class="logo-sub">Vehicle Intelligence</span>
+      </div>
+    </a>
+    <nav class="main-nav" id="main-nav">
+      <a href="#" class="nav-link active">Home</a>
+      <a href="#features" class="nav-link">Features</a>
+      <a href="#how-it-works" class="nav-link">How It Works</a>
+      <a href="#testimonials" class="nav-link">About</a>
+    </nav>
+    <div class="header-actions">
+      <a href="login.html" class="btn-outline btn-sm">Login</a>
+      <a href="login.html" class="btn-primary btn-sm">Get Started</a>
+      <button class="hamburger" id="hamburger">☰</button>
+    </div>
+  </div>
+  <div class="mobile-nav" id="mobile-nav">
+    <button class="mobile-nav-close" id="mobile-nav-close">✕</button>
+    <a href="#" class="mobile-nav-link">Home</a>
+    <a href="#features" class="mobile-nav-link">Features</a>
+    <a href="#how-it-works" class="mobile-nav-link">How It Works</a>
+    <a href="#testimonials" class="mobile-nav-link">About</a>
+    <a href="login.html" class="btn-primary mobile-cta">Get Started Free</a>
+  </div>
+</header>
+
+<!-- HERO -->
+<section id="hero">
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="orb orb-3"></div>
+  <div class="hero-inner">
+    <div class="hero-text">
+      <div class="hero-pill"><span class="pill-dot"></span>LIVE OBD-II DIAGNOSTICS</div>
+      <h1 class="hero-h1">
+        Know Your<br>
+        <span class="gradient-text">Vehicle's Health</span><br>
+        Before It Fails.
+      </h1>
+      <p class="hero-sub">AI-powered analysis of engine, fuel, and drivetrain systems using live OBD-II sensor data. Predict failures before they happen.</p>
+      <div class="hero-btns">
+        <a href="login.html" class="btn-primary btn-lg">Get Started Free &nbsp;→</a>
+        <a href="#how-it-works" class="btn-outline btn-lg">See How It Works</a>
+      </div>
+      <div class="trust-badges">
+        <span>🔒 Secure</span><span class="badge-dot">·</span>
+        <span>⚡ Real-time</span><span class="badge-dot">·</span>
+        <span>🚗 Any OBD-II Scanner</span>
+      </div>
+    </div>
+
+    <div class="hero-visual">
+      <div class="obd-scene">
+        <svg class="dash-svg" viewBox="0 0 340 230" xmlns="http://www.w3.org/2000/svg">
+          <rect x="10" y="20" width="320" height="170" rx="14" fill="rgba(9,13,26,0.95)" stroke="rgba(0,229,255,0.3)" stroke-width="1.5"/>
+          <text x="170" y="14" fill="#00e5ff" font-size="9" text-anchor="middle" font-family="Orbitron" letter-spacing="3">VEXIS DASHBOARD</text>
+          <!-- Speedometer -->
+          <path d="M 55 130 A 50 50 0 0 1 155 130" fill="none" stroke="rgba(0,229,255,0.15)" stroke-width="6" stroke-linecap="round"/>
+          <path class="speed-arc" d="M 55 130 A 50 50 0 0 1 115 82" fill="none" stroke="#00e5ff" stroke-width="6" stroke-linecap="round"/>
+          <text x="90" y="148" fill="#6b7a99" font-size="9" text-anchor="middle" font-family="Orbitron">SPEED</text>
+          <!-- RPM -->
+          <path d="M 185 130 A 50 50 0 0 1 285 130" fill="none" stroke="rgba(255,109,0,0.15)" stroke-width="6" stroke-linecap="round"/>
+          <path class="rpm-arc" d="M 185 130 A 50 50 0 0 1 257 92" fill="none" stroke="#ff6d00" stroke-width="6" stroke-linecap="round"/>
+          <text x="238" y="148" fill="#6b7a99" font-size="9" text-anchor="middle" font-family="Orbitron">RPM</text>
+          <!-- Steering wheel -->
+          <circle cx="170" cy="155" r="28" fill="none" stroke="rgba(0,229,255,0.35)" stroke-width="2"/>
+          <circle cx="170" cy="155" r="10" fill="none" stroke="rgba(0,229,255,0.35)" stroke-width="2"/>
+          <line x1="170" y1="127" x2="170" y2="145" stroke="rgba(0,229,255,0.35)" stroke-width="2"/>
+          <line x1="142" y1="155" x2="160" y2="155" stroke="rgba(0,229,255,0.35)" stroke-width="2"/>
+          <line x1="180" y1="155" x2="198" y2="155" stroke="rgba(0,229,255,0.35)" stroke-width="2"/>
+          <!-- OBD port -->
+          <rect x="148" y="188" width="44" height="16" rx="3" fill="rgba(0,229,255,0.06)" stroke="rgba(0,229,255,0.5)" stroke-width="1.2"/>
+          <rect x="154" y="192" width="4" height="5" rx="1" fill="#00e5ff" opacity="0.6"/>
+          <rect x="161" y="192" width="4" height="5" rx="1" fill="#00e5ff" opacity="0.6"/>
+          <rect x="168" y="192" width="4" height="5" rx="1" fill="#00e5ff" opacity="0.6"/>
+          <rect x="175" y="192" width="4" height="5" rx="1" fill="#00e5ff" opacity="0.6"/>
+          <rect x="182" y="192" width="4" height="5" rx="1" fill="#00e5ff" opacity="0.6"/>
+        </svg>
+
+        <div class="obd-connector">
+          <svg viewBox="0 0 80 50" xmlns="http://www.w3.org/2000/svg">
+            <rect x="4" y="4" width="72" height="30" rx="4" fill="rgba(0,229,255,0.08)" stroke="#00e5ff" stroke-width="1.5"/>
+            <rect x="11" y="10" width="8" height="12" rx="2" fill="#00e5ff" opacity="0.6"/>
+            <rect x="22" y="10" width="8" height="12" rx="2" fill="#00e5ff" opacity="0.6"/>
+            <rect x="33" y="10" width="8" height="12" rx="2" fill="#00e5ff" opacity="0.6"/>
+            <rect x="44" y="10" width="8" height="12" rx="2" fill="#00e5ff" opacity="0.6"/>
+            <rect x="55" y="10" width="8" height="12" rx="2" fill="#00e5ff" opacity="0.6"/>
+            <rect x="30" y="32" width="20" height="14" rx="2" fill="rgba(0,229,255,0.15)" stroke="#00e5ff" stroke-width="1"/>
+          </svg>
+          <div class="scan-wave"></div>
+        </div>
+
+        <div class="metric-bars">
+          <div class="metric-row">
+            <span class="metric-label">RPM</span>
+            <div class="metric-track"><div class="dash-bar-fill" style="--fill-width:65%;background:linear-gradient(90deg,#00e5ff,#00b8cc)"></div></div>
+            <span class="metric-val">2,340</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">SPEED</span>
+            <div class="metric-track"><div class="dash-bar-fill" style="--fill-width:45%;background:linear-gradient(90deg,#7c4dff,#b47aff)"></div></div>
+            <span class="metric-val">67 km/h</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">TEMP</span>
+            <div class="metric-track"><div class="dash-bar-fill" style="--fill-width:70%;background:linear-gradient(90deg,#ff6d00,#ffb300)"></div></div>
+            <span class="metric-val">87°C</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">LOAD</span>
+            <div class="metric-track"><div class="dash-bar-fill" style="--fill-width:52%;background:linear-gradient(90deg,#00e676,#00e5ff)"></div></div>
+            <span class="metric-val">52%</span>
+          </div>
+        </div>
+
+        <div class="health-badge">
+          <div class="health-score-num">84</div>
+          <div class="health-score-label">HEALTH</div>
+          <div class="health-score-sub">Good Condition</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- STATS -->
+<section id="stats">
+  <div class="stats-inner">
+    <div class="stat-item reveal">
+      <div class="stat-num" data-target="50000" data-suffix="+" data-format="comma">0+</div>
+      <div class="stat-label">Vehicles Scanned</div>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat-item reveal reveal-delay-1">
+      <div class="stat-num" data-target="99.2" data-suffix="%" data-decimal="1">0%</div>
+      <div class="stat-label">Diagnostic Accuracy</div>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat-item reveal reveal-delay-2">
+      <div class="stat-num" data-target="5" data-suffix="">0</div>
+      <div class="stat-label">Systems Monitored</div>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat-item reveal reveal-delay-3">
+      <div class="stat-num" data-prefix="&lt; " data-target="2" data-suffix="s">&lt; 0s</div>
+      <div class="stat-label">Analysis Time</div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="section-inner">
+    <div class="section-heading reveal">
+      <h2>What Vexis Analyzes</h2>
+      <p>Five critical systems. One intelligent score.</p>
+    </div>
+    <div class="features-grid">
+
+      <div class="feature-card reveal">
+        <div class="fc-tag">PRIMARY SYSTEM</div>
+        <div class="fc-icon cyan">
+          <svg viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="10" stroke="currentColor" stroke-width="2"/><path d="M24 8v4M24 36v4M8 24h4M36 24h4M12.7 12.7l2.8 2.8M32.5 32.5l2.8 2.8M12.7 35.3l2.8-2.8M32.5 15.5l2.8-2.8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="24" cy="24" r="3" fill="currentColor"/></svg>
+        </div>
+        <div class="fc-title">Engine Health</div>
+        <div class="fc-score">82 <span>/ 100</span></div>
+        <div class="fc-bar-track"><div class="fc-bar" style="--w:82%;background:linear-gradient(90deg,#00e5ff,#00b8cc)"></div></div>
+        <div class="fc-hover-desc"><p>RPM patterns, load analysis, MAF sensor diagnostics and engine stress detection across all operating conditions.</p></div>
+      </div>
+
+      <div class="feature-card reveal reveal-delay-1">
+        <div class="fc-tag orange">HIGH PRIORITY</div>
+        <div class="fc-icon orange">
+          <svg viewBox="0 0 48 48" fill="none"><path d="M24 6C24 6 10 20 10 30a14 14 0 0 0 28 0C38 20 24 6 24 6z" stroke="currentColor" stroke-width="2" fill="rgba(255,109,0,0.08)"/><path d="M18 32a6 6 0 0 0 12 0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </div>
+        <div class="fc-title">Fuel System</div>
+        <div class="fc-score">76 <span>/ 100</span></div>
+        <div class="fc-bar-track"><div class="fc-bar" style="--w:76%;background:linear-gradient(90deg,#ff6d00,#ffb300)"></div></div>
+        <div class="fc-hover-desc"><p>Short/long fuel trim analysis, O2 sensor correlation and injection efficiency metrics.</p></div>
+      </div>
+
+      <div class="feature-card reveal reveal-delay-2">
+        <div class="fc-tag green">PERFORMANCE</div>
+        <div class="fc-icon green">
+          <svg viewBox="0 0 48 48" fill="none"><path d="M26 6l-12 20h10l-4 16 14-22H24l2-14z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" fill="rgba(0,230,118,0.08)"/></svg>
+        </div>
+        <div class="fc-title">Efficiency Score</div>
+        <div class="fc-score">88 <span>/ 100</span></div>
+        <div class="fc-bar-track"><div class="fc-bar" style="--w:88%;background:linear-gradient(90deg,#00e5ff,#00e676)"></div></div>
+        <div class="fc-hover-desc"><p>MAF-to-speed ratios, load efficiency patterns and performance optimization signals.</p></div>
+      </div>
+
+      <div class="feature-card reveal reveal-delay-1">
+        <div class="fc-tag purple">BEHAVIORAL</div>
+        <div class="fc-icon purple">
+          <svg viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="16" stroke="currentColor" stroke-width="2"/><circle cx="24" cy="24" r="6" stroke="currentColor" stroke-width="2"/><line x1="24" y1="8" x2="24" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="38.9" y1="18" x2="30.2" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </div>
+        <div class="fc-title">Driving Behavior</div>
+        <div class="fc-score">71 <span>/ 100</span></div>
+        <div class="fc-bar-track"><div class="fc-bar" style="--w:71%;background:linear-gradient(90deg,#7c4dff,#b47aff)"></div></div>
+        <div class="fc-hover-desc"><p>Speed stress patterns, RPM behavior analysis and driving style scoring.</p></div>
+      </div>
+
+      <div class="feature-card reveal reveal-delay-2">
+        <div class="fc-tag red">ENVIRONMENTAL</div>
+        <div class="fc-icon red">
+          <svg viewBox="0 0 48 48" fill="none"><rect x="20" y="6" width="8" height="24" rx="4" stroke="currentColor" stroke-width="2"/><circle cx="24" cy="35" r="7" stroke="currentColor" stroke-width="2" fill="rgba(255,23,68,0.08)"/><line x1="28" y1="16" x2="33" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="28" y1="22" x2="35" y2="22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="24" cy="35" r="3" fill="currentColor"/></svg>
+        </div>
+        <div class="fc-title">Thermal Health</div>
+        <div class="fc-score">79 <span>/ 100</span></div>
+        <div class="fc-bar-track"><div class="fc-bar" style="--w:79%;background:linear-gradient(90deg,#ff1744,#ff6d00)"></div></div>
+        <div class="fc-hover-desc"><p>Temperature stress, ambient conditions and cooling system efficiency across drive cycles.</p></div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section id="how-it-works">
+  <div class="section-inner">
+    <div class="section-heading reveal">
+      <h2>How Vexis Works</h2>
+      <p>Raw sensor data → Actionable health insights</p>
+    </div>
+    <div class="steps-row">
+
+      <div class="step-card glass-card reveal">
+        <div class="step-num">01</div>
+        <div class="step-icon">
+          <svg viewBox="0 0 64 64" fill="none"><rect x="8" y="16" width="48" height="30" rx="5" stroke="#00e5ff" stroke-width="2" fill="rgba(0,229,255,0.06)"/><rect x="18" y="23" width="8" height="11" rx="2" fill="#00e5ff" opacity="0.5"/><rect x="28" y="23" width="8" height="11" rx="2" fill="#00e5ff" opacity="0.5"/><rect x="38" y="23" width="8" height="11" rx="2" fill="#00e5ff" opacity="0.5"/><rect x="26" y="44" width="12" height="7" rx="2" stroke="#00e5ff" stroke-width="1.5"/></svg>
+        </div>
+        <h3>Connect OBD Scanner</h3>
+        <p>Plug any USB ELM327 scanner into your vehicle's OBD-II port and connect via USB to start streaming sensor data.</p>
+      </div>
+
+      <div class="step-connector">
+        <div class="connector-line"></div>
+        <svg viewBox="0 0 20 20" width="18" height="18"><path d="M0 10h14M8 4l7 6-7 6" stroke="#00e5ff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.7"/></svg>
+      </div>
+
+      <div class="step-card glass-card reveal reveal-delay-1">
+        <div class="step-num">02</div>
+        <div class="step-icon">
+          <svg viewBox="0 0 64 64" fill="none"><rect x="16" y="16" width="32" height="32" rx="4" stroke="#00e5ff" stroke-width="2" fill="rgba(0,229,255,0.06)"/><rect x="24" y="24" width="16" height="16" rx="2" stroke="#00e5ff" stroke-width="1.5" fill="rgba(0,229,255,0.1)"/><line x1="8" y1="24" x2="16" y2="24" stroke="#00e5ff" stroke-width="1.5" stroke-linecap="round"/><line x1="8" y1="32" x2="16" y2="32" stroke="#00e5ff" stroke-width="1.5" stroke-linecap="round"/><line x1="48" y1="24" x2="56" y2="24" stroke="#00e5ff" stroke-width="1.5" stroke-linecap="round"/><line x1="48" y1="32" x2="56" y2="32" stroke="#00e5ff" stroke-width="1.5" stroke-linecap="round"/><circle cx="32" cy="32" r="4" fill="#00e5ff" opacity="0.8"/></svg>
+        </div>
+        <h3>AI Analyzes Data</h3>
+        <p>Isolation Forest ML models process 21 derived features across 5 vehicle systems to detect anomalies and health patterns.</p>
+      </div>
+
+      <div class="step-connector">
+        <div class="connector-line"></div>
+        <svg viewBox="0 0 20 20" width="18" height="18"><path d="M0 10h14M8 4l7 6-7 6" stroke="#00e5ff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.7"/></svg>
+      </div>
+
+      <div class="step-card glass-card reveal reveal-delay-2">
+        <div class="step-num">03</div>
+        <div class="step-icon">
+          <svg viewBox="0 0 64 64" fill="none"><path d="M10 48 A 26 26 0 0 1 54 48" stroke="#00e5ff" stroke-width="2" fill="none"/><path d="M10 48 A 26 26 0 0 1 38 22" stroke="#00e5ff" stroke-width="3" fill="none" stroke-linecap="round"/><line x1="32" y1="48" x2="46" y2="28" stroke="#ff6d00" stroke-width="2.5" stroke-linecap="round"/><circle cx="32" cy="48" r="3.5" fill="#00e5ff"/></svg>
+        </div>
+        <h3>Get Health Score</h3>
+        <p>Receive component scores 0-100, detected issues, failure risk predictions and download a detailed PDF health report.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- TESTIMONIALS -->
+<section id="testimonials">
+  <div class="section-inner">
+    <div class="section-heading reveal">
+      <h2>Trusted by Vehicle Owners</h2>
+      <p>Real feedback from real users</p>
+    </div>
+    <div class="testimonials-grid">
+
+      <div class="testi-card glass-card reveal">
+        <div class="testi-quote-mark">"</div>
+        <div class="testi-stars">★★★★★</div>
+        <p class="testi-text">"Vexis caught a fuel trim issue weeks before my car showed any symptoms. Saved me a costly repair bill."</p>
+        <div class="testi-author">
+          <div class="testi-avatar">RS</div>
+          <div><div class="testi-name">Rahul Sharma</div><div class="testi-role">Car Owner, Delhi</div></div>
+        </div>
+      </div>
+
+      <div class="testi-card glass-card reveal reveal-delay-1">
+        <div class="testi-quote-mark">"</div>
+        <div class="testi-stars">★★★★★</div>
+        <p class="testi-text">"The engine health score matches exactly what my mechanic found. Incredibly accurate AI diagnostics."</p>
+        <div class="testi-author">
+          <div class="testi-avatar">PM</div>
+          <div><div class="testi-name">Priya Mehta</div><div class="testi-role">Fleet Manager</div></div>
+        </div>
+      </div>
+
+      <div class="testi-card glass-card reveal reveal-delay-2">
+        <div class="testi-quote-mark">"</div>
+        <div class="testi-stars">★★★★★</div>
+        <p class="testi-text">"Finally an OBD dashboard that actually works. Real-time data with ML predictions — this is the future."</p>
+        <div class="testi-author">
+          <div class="testi-avatar">AS</div>
+          <div><div class="testi-name">Arjun Singh</div><div class="testi-role">Auto Enthusiast</div></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer id="footer">
+  <div class="footer-inner">
+    <div class="footer-col">
+      <div class="footer-logo">
+        <svg viewBox="0 0 36 36" fill="none" width="28" height="28"><polygon points="18,1 33,10 33,26 18,35 3,26 3,10" stroke="#00e5ff" stroke-width="1.5" fill="rgba(0,229,255,0.06)"/><polyline points="6,20 10,20 13,12 16,24 19,17 21,21 24,21 27,14 30,18" stroke="#00e5ff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+        <span class="footer-logo-text">VEXIS</span>
+      </div>
+      <p class="footer-desc">Intelligent diagnostics for every driver.</p>
+      <p class="footer-ml-note">Powered by Isolation Forest ML</p>
+    </div>
+    <div class="footer-col">
+      <div class="footer-col-title">Navigation</div>
+      <a href="#" class="footer-link">Home</a>
+      <a href="#features" class="footer-link">Features</a>
+      <a href="#how-it-works" class="footer-link">How It Works</a>
+      <a href="login.html" class="footer-link">Login</a>
+    </div>
+    <div class="footer-col">
+      <div class="footer-col-title">Project</div>
+      <p class="footer-proj-note">Built as an AI/ML College Project</p>
+      <p class="footer-proj-note">OBD-II Vehicle Health Scoring System</p>
+      <p class="footer-proj-note">Using VED Kaggle Dataset</p>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span>&copy; 2025 Vexis. All rights reserved.</span>
+    <span class="footer-love">Made with <span style="color:#00e5ff">&#9829;</span> in India</span>
+  </div>
+</footer>
+
+<script type="module">
+import { initRevealAnimations } from './js/api.js';
+
+// Header scroll
+const header = document.getElementById('header');
+window.addEventListener('scroll', () => {
+  header.classList.toggle('scrolled', window.scrollY > 80);
+  // Active nav
+  const ids = ['hero','features','how-it-works','testimonials'];
+  let cur = 'hero';
+  ids.forEach(id => {
+    const s = document.getElementById(id);
+    if (s && window.scrollY >= s.offsetTop - 130) cur = id;
+  });
+  document.querySelectorAll('.nav-link').forEach(l => {
+    const h = l.getAttribute('href') || '';
+    l.classList.toggle('active', h === '#' + cur || (h === '#' && cur === 'hero'));
+  });
+}, { passive: true });
+
+// Smooth scroll for all anchor links
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+  a.addEventListener('click', e => {
+    const id = a.getAttribute('href').replace('#','');
+    if (!id) return;
+    const el = document.getElementById(id);
+    if (el) { e.preventDefault(); el.scrollIntoView({ behavior:'smooth' }); }
+    document.getElementById('mobile-nav').classList.remove('open');
+  });
+});
+
+// Hamburger
+document.getElementById('hamburger').addEventListener('click', () =>
+  document.getElementById('mobile-nav').classList.add('open'));
+document.getElementById('mobile-nav-close').addEventListener('click', () =>
+  document.getElementById('mobile-nav').classList.remove('open'));
+
+// Reveal
+initRevealAnimations();
+
+// Stats counter
+function easeOutQuart(t){ return 1-Math.pow(1-t,4); }
+function runCounter(el){
+  const target = parseFloat(el.dataset.target);
+  const suffix = el.dataset.suffix || '';
+  const prefix = el.dataset.prefix || '';
+  const dec    = parseInt(el.dataset.decimal || '0');
+  const fmt    = el.dataset.format;
+  const dur    = 1800;
+  let start    = null;
+  function tick(ts){
+    if(!start) start=ts;
+    const p = Math.min((ts-start)/dur,1);
+    const v = easeOutQuart(p)*target;
+    let d = dec > 0 ? v.toFixed(dec) : Math.floor(v);
+    if(fmt==='comma') d = Number(d).toLocaleString();
+    el.textContent = prefix + d + suffix;
+    if(p<1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if(e.isIntersecting){
+      e.target.querySelectorAll('.stat-num').forEach(runCounter);
+    }
+  });
+},{threshold:0.5}).observe(document.getElementById('stats'));
+
+// Connector line animation
+new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if(e.isIntersecting)
+      e.target.querySelectorAll('.connector-line').forEach(l => l.classList.add('line-animate'));
+  });
+},{threshold:0.3}).observe(document.getElementById('how-it-works'));
+</script>
+</body>
+</html>
