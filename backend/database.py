@@ -8,15 +8,18 @@ from config import Config
 # Returns a new psycopg2 connection using Config
 # ──────────────────────────────────────────────
 def get_db():
-    connection = psycopg2.connect(
+    conn = psycopg2.connect(
         host=Config.DB_HOST,
         port=Config.DB_PORT,
         dbname=Config.DB_NAME,
         user=Config.DB_USER,
         password=Config.DB_PASSWORD,
-        cursor_factory=psycopg2.extras.RealDictCursor
+        sslmode='disable',
+        connect_timeout=15
     )
-    return connection
+    conn.cursor_factory = \
+        psycopg2.extras.RealDictCursor
+    return conn
 
 
 # ──────────────────────────────────────────────
