@@ -9,11 +9,11 @@ const IS_LOCAL =
 
 const API_BASE = IS_LOCAL
   ? 'http://localhost:5000/api'
-  : 'https://your-app.onrender.com/api';
+  : 'https://vexis-backend-kklg.onrender.com/api';
 
 const SOCKET_URL = IS_LOCAL
   ? 'http://localhost:5000'
-  : 'https://your-app.onrender.com';
+  : 'https://vexis-backend-kklg.onrender.com';
 
 export { API_BASE, SOCKET_URL };
 
@@ -50,8 +50,8 @@ export function authHeaders() {
 
 // ── 6. apiGet ──────────────────────────────────────────────────────
 export async function apiGet(endpoint) {
-  const res  = await fetch(API_BASE + endpoint, {
-    method:  'GET',
+  const res = await fetch(API_BASE + endpoint, {
+    method: 'GET',
     headers: authHeaders()
   });
   const data = await res.json();
@@ -64,17 +64,17 @@ export async function apiPost(endpoint, body, skipAuth = false) {
   const headers = skipAuth
     ? { 'Content-Type': 'application/json' }
     : authHeaders();
-  const res  = await fetch(API_BASE + endpoint, {
-    method:  'POST',
+  const res = await fetch(API_BASE + endpoint, {
+    method: 'POST',
     headers,
-    body:    JSON.stringify(body)
+    body: JSON.stringify(body)
   });
   const data = await res.json();
   // For 403 we return the data object alongside the error so callers can inspect it
   if (!res.ok) {
     const err = new Error(data.error || 'Request failed');
     err.status = res.status;
-    err.data   = data;
+    err.data = data;
     throw err;
   }
   return data;
@@ -116,7 +116,7 @@ export function showToast(message, type = 'info', duration = 3000) {
 
   // Icon per type
   const icons = { success: '✓', error: '✗', info: 'ℹ' };
-  const icon  = icons[type] || icons.info;
+  const icon = icons[type] || icons.info;
 
   // Build toast element
   const toast = document.createElement('div');
@@ -143,10 +143,10 @@ export function formatScore(score) {
 export function getBadgeClass(category) {
   const map = {
     'Excellent': 'badge-excellent',
-    'Good':      'badge-good',
-    'Fair':      'badge-fair',
-    'Poor':      'badge-poor',
-    'Critical':  'badge-critical'
+    'Good': 'badge-good',
+    'Fair': 'badge-fair',
+    'Poor': 'badge-poor',
+    'Critical': 'badge-critical'
   };
   return map[category] || 'badge-good';
 }
@@ -160,10 +160,10 @@ export function animateNumber(element, start, end, duration = 1500) {
 
   function step(timestamp) {
     if (!startTime) startTime = timestamp;
-    const elapsed  = timestamp - startTime;
+    const elapsed = timestamp - startTime;
     const progress = Math.min(elapsed / duration, 1);
-    const eased    = easeOutQuart(progress);
-    const current  = start + (end - start) * eased;
+    const eased = easeOutQuart(progress);
+    const current = start + (end - start) * eased;
 
     element.textContent = current.toFixed(1);
 
@@ -234,8 +234,8 @@ export function updateOBDStatusBanner(status) {
   if (status.connected) {
     banner.classList.add('connected');
     banner.classList.remove('disconnected');
-    const port      = status.port || 'AUTO';
-    const simBadge  = status.simulated
+    const port = status.port || 'AUTO';
+    const simBadge = status.simulated
       ? '<span style="opacity:.7;font-size:11px"> (Simulated)</span>'
       : '';
     banner.innerHTML = `
