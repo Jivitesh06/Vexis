@@ -14,7 +14,7 @@ def get_db():
         dbname=Config.DB_NAME,
         user=Config.DB_USER,
         password=Config.DB_PASSWORD,
-        sslmode='disable',
+        sslmode='require',
         connect_timeout=15
     )
     conn.cursor_factory = \
