@@ -70,7 +70,7 @@ def send_verification_email(to_email: str, name: str, token: str) -> bool:
     """
     Send account verification email with a secure one-time link.
     """
-    url = f"{Config.FRONTEND_URL}/api/auth/verify?token={token}"
+    url = f"{Config.BACKEND_URL}/api/auth/verify?token={token}"
 
     html = f"""<!DOCTYPE html>
 <html>

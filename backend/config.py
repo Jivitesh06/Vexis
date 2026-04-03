@@ -30,6 +30,10 @@ class Config:
     MAIL_PASSWORD = os.getenv("MAIL_PASSWORD")
     MAIL_NAME     = os.getenv("MAIL_NAME", "Vexis")
     FRONTEND_URL  = os.getenv("FRONTEND_URL", "http://localhost:5000")
+    BACKEND_URL   = os.getenv(
+        "BACKEND_URL",
+        "http://localhost:5000"
+    )
 
     # Verification token lifetime
     VERIFY_TOKEN_EXPIRY_HOURS = 24
