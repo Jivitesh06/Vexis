@@ -155,7 +155,12 @@ print("=" * 50)
 print(" VEXIS API SERVER STARTING...")
 print("=" * 50)
 
-init_db()
+try:
+    init_db()
+    print("Database initialized successfully")
+except Exception as e:
+    print(f"Database init failed: {e}")
+    print("App will continue without DB - check credentials")
 load_models()
 
 # ──────────────────────────────────────────────────────────────────

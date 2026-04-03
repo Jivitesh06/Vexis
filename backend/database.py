@@ -148,6 +148,19 @@ def execute_query(query, params=(), fetchone=False, fetchall=False, commit=False
 # ──────────────────────────────────────────────
 # Entry point — run directly to initialize DB
 # ──────────────────────────────────────────────
+def test_connection():
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT version();")
+        result = cur.fetchone()
+        print(f"DB Connected: {result}")
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"DB Connection failed: {e}")
+        return False
+
 if __name__ == "__main__":
+    test_connection()
     init_db()
-    print("Vexis PostgreSQL database initialized successfully.")
