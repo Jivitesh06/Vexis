@@ -6,18 +6,31 @@ import os
 
 # Initialize Firebase Admin SDK
 def init_firebase():
-    cred_path = os.getenv(
-        'FIREBASE_CREDENTIALS_PATH',
-        'firebase-service-account.json'
-    )
-    
-    if not firebase_admin._apps:
-        try:
-            cred = credentials.Certificate(cred_path)
+    if firebase_admin._apps:
+        return  # Already initialized
+
+    try:
+        # Option 1: JSON content directly in env variable (Render production)
+        cred_json = os.getenv('FIREBASE_CREDENTIALS_JSON')
+        if cred_json:
+            import json
+            cred_dict = json.loads(cred_json)
+            cred = credentials.Certificate(cred_dict)
             firebase_admin.initialize_app(cred)
-            print("[FIREBASE] Admin SDK initialized")
-        except Exception as e:
-            print(f"[FIREBASE] SDK init error: {e}")
+            print("[FIREBASE] Admin SDK initialized from env JSON")
+            return
+
+        # Option 2: Path to local JSON file (local dev)
+        cred_path = os.getenv(
+            'FIREBASE_CREDENTIALS_PATH',
+            'firebase-service-account.json'
+        )
+        cred = credentials.Certificate(cred_path)
+        firebase_admin.initialize_app(cred)
+        print("[FIREBASE] Admin SDK initialized from file")
+    except Exception as e:
+        print(f"[FIREBASE] SDK init error: {e}")
+
 
 def verify_firebase_token(token):
     """
