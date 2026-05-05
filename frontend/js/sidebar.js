@@ -231,7 +231,9 @@ export async function loadSection(name) {
       }
       break;
     case 'manual':
-      // manual-report.html is a standalone page — content already in HTML, skip
+      if (typeof window.loadManualReportSection === 'function') {
+        await window.loadManualReportSection(contentArea);
+      }
       break;
     default:
       await loadDashboardContent();
@@ -291,10 +293,7 @@ function handleRoute() {
   else if (path.includes('manual-report.html')) section = 'manual';
 
   setActiveSection(section);
-  // Standalone pages (manual-report) already have content in HTML — skip JS injection
-  if (section !== 'manual') {
-    loadSection(section);
-  }
+  loadSection(section);
 }
 
 handleRoute();

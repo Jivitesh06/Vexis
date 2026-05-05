@@ -4,161 +4,28 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <title>Vexis — Manual Report</title>
-  <meta name="description" content="Upload your OBD-II CSV data and get an AI-powered vehicle health report instantly."/>
+  <meta name="description" content="Upload OBD-II CSV data and get an AI-powered vehicle health PDF report instantly."/>
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;500;600&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="css/global.css"/>
   <link rel="stylesheet" href="css/dashboard.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
   <script type="module" src="js/sidebar.js" defer></script>
+  <script type="module" src="js/dashboard.js" defer></script>
   <script type="module" src="js/manual-report.js" defer></script>
-  <style>
-    .upload-zone {
-      border: 2px dashed rgba(0,229,255,0.35);
-      border-radius: 16px;
-      padding: 60px 40px;
-      text-align: center;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      background: rgba(0,229,255,0.03);
-      position: relative;
-    }
-    .upload-zone:hover, .upload-zone.drag-over {
-      border-color: var(--accent);
-      background: rgba(0,229,255,0.07);
-      transform: translateY(-2px);
-      box-shadow: 0 0 30px rgba(0,229,255,0.1);
-    }
-    .upload-icon {
-      width: 72px; height: 72px;
-      margin: 0 auto 20px;
-      background: linear-gradient(135deg, rgba(0,229,255,0.15), rgba(100,220,255,0.05));
-      border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 32px;
-    }
-    .upload-title { font-family: var(--font-display); font-size: 20px; font-weight: 700; color: var(--text); margin-bottom: 8px; }
-    .upload-sub { font-size: 13px; color: var(--muted); }
-    .file-selected {
-      background: rgba(0,229,255,0.08);
-      border-color: var(--accent);
-      border-style: solid;
-    }
-    .file-selected .upload-icon { background: linear-gradient(135deg, rgba(0,229,255,0.3), rgba(100,220,255,0.1)); }
-
-    .csv-columns {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 10px;
-      margin-top: 16px;
-    }
-    .col-badge {
-      background: rgba(0,229,255,0.06);
-      border: 1px solid rgba(0,229,255,0.15);
-      border-radius: 8px;
-      padding: 10px 14px;
-      font-size: 12px;
-      font-family: monospace;
-      color: var(--accent);
-    }
-    .col-badge span { display: block; color: var(--muted); font-family: var(--font-body); font-size: 11px; margin-top: 3px; }
-
-    .analyze-btn {
-      width: 100%;
-      padding: 18px;
-      font-size: 16px;
-      font-family: var(--font-display);
-      font-weight: 700;
-      letter-spacing: 1px;
-      border: none;
-      border-radius: 12px;
-      cursor: pointer;
-      background: linear-gradient(135deg, #00e5ff, #0ea5e9);
-      color: #000;
-      transition: all 0.3s ease;
-      margin-top: 24px;
-      display: flex; align-items: center; justify-content: center; gap: 10px;
-    }
-    .analyze-btn:hover:not(:disabled) {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 30px rgba(0,229,255,0.35);
-    }
-    .analyze-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
-
-    .progress-bar-wrap {
-      background: rgba(255,255,255,0.06);
-      border-radius: 999px;
-      height: 8px;
-      overflow: hidden;
-      margin-top: 16px;
-      display: none;
-    }
-    .progress-bar-fill {
-      height: 100%;
-      background: linear-gradient(90deg, #00e5ff, #0ea5e9);
-      border-radius: 999px;
-      width: 0%;
-      transition: width 0.4s ease;
-      animation: shimmer 1.5s infinite;
-    }
-    @keyframes shimmer {
-      0%   { box-shadow: 0 0 0 rgba(0,229,255,0); }
-      50%  { box-shadow: 0 0 20px rgba(0,229,255,0.5); }
-      100% { box-shadow: 0 0 0 rgba(0,229,255,0); }
-    }
-
-    .sample-row {
-      font-family: monospace;
-      font-size: 11px;
-      color: var(--muted);
-      background: rgba(0,0,0,0.3);
-      border-radius: 8px;
-      padding: 12px;
-      overflow-x: auto;
-      white-space: nowrap;
-      margin-top: 12px;
-      border: 1px solid rgba(255,255,255,0.06);
-    }
-
-    .status-card {
-      display: none;
-      padding: 20px 24px;
-      border-radius: 12px;
-      margin-top: 20px;
-      align-items: center;
-      gap: 16px;
-    }
-    .status-card.show { display: flex; }
-    .status-card.success { background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); }
-    .status-card.error   { background: rgba(239,68,68,0.1);  border: 1px solid rgba(239,68,68,0.3); }
-    .status-card.info    { background: rgba(0,229,255,0.08); border: 1px solid rgba(0,229,255,0.2); }
-
-    .steps-list { counter-reset: step; display: flex; flex-direction: column; gap: 12px; }
-    .step-item {
-      display: flex; align-items: flex-start; gap: 16px;
-      padding: 16px 20px;
-      background: rgba(255,255,255,0.03);
-      border-radius: 10px;
-      border: 1px solid rgba(255,255,255,0.06);
-    }
-    .step-num {
-      width: 32px; height: 32px; flex-shrink: 0;
-      border-radius: 50%;
-      background: linear-gradient(135deg, rgba(0,229,255,0.2), rgba(0,229,255,0.05));
-      border: 1px solid rgba(0,229,255,0.3);
-      display: flex; align-items: center; justify-content: center;
-      font-family: var(--font-display); font-size: 13px; font-weight: 700; color: var(--accent);
-    }
-    .step-text { font-size: 13px; color: var(--text-dim); line-height: 1.5; }
-    .step-title { font-weight: 600; color: var(--text); margin-bottom: 2px; }
-  </style>
 </head>
 <body>
+
 <div class="grid-bg"></div>
 
 <div class="app-layout">
 
-  <!-- HEADER -->
+  <!-- ═══════════════════════════════════════
+       HEADER
+  ════════════════════════════════════════ -->
   <header class="dash-header" id="dash-header">
+
+    <!-- Left: Logo -->
     <div class="header-left">
       <a href="#" class="dash-logo" id="logo-home">
         <svg viewBox="0 0 40 40" fill="none" width="36" height="36">
@@ -168,12 +35,22 @@
         <span class="dash-logo-text">VEXIS</span>
       </a>
     </div>
-    <div class="header-center"><span id="live-clock" class="live-clock">--</span></div>
+
+    <!-- Center: Live clock -->
+    <div class="header-center">
+      <span id="live-clock" class="live-clock">--</span>
+    </div>
+
+    <!-- Right: Status + User + Logout -->
     <div class="header-right">
+
+      <!-- OBD Status -->
       <div id="header-obd-status" class="header-obd">
         <span class="obd-dot disconnected" id="obd-dot"></span>
         <span class="obd-label" id="obd-label">OBD Disconnected</span>
       </div>
+
+      <!-- Notifications -->
       <button class="notif-btn" id="notif-btn" aria-label="Notifications">
         <svg viewBox="0 0 24 24" fill="none" width="20" height="20">
           <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
@@ -181,174 +58,193 @@
         </svg>
         <span class="notif-badge" id="notif-badge" style="display:none">0</span>
       </button>
+
+      <!-- User info -->
       <div class="user-info">
         <img id="user-photo" src="" alt="" style="display:none;width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid rgba(0,229,255,0.4)"/>
         <div class="user-avatar" id="user-avatar">--</div>
         <span class="user-name" id="user-name">Loading...</span>
       </div>
+
+      <!-- Logout -->
       <button id="logout-btn" class="logout-btn">
         <svg viewBox="0 0 24 24" fill="none" width="16" height="16">
           <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
         <span>Logout</span>
       </button>
+
     </div>
   </header>
 
-  <!-- SIDEBAR -->
+  <!-- ═══════════════════════════════════════
+       SIDEBAR
+  ════════════════════════════════════════ -->
   <aside class="sidebar" id="sidebar">
-    <nav class="sidebar-nav">
-      <a href="dashboard.html" class="nav-item" data-section="dashboard">
-        <svg viewBox="0 0 24 24" fill="none" width="20" height="20"><rect x="3" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.8"/><rect x="14" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.8"/><rect x="3" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.8"/><rect x="14" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.8"/></svg>
-        <span class="nav-label">Dashboard</span>
-      </a>
-      <a href="vehicles.html" class="nav-item" data-section="vehicles">
-        <svg viewBox="0 0 24 24" fill="none" width="20" height="20"><path d="M5 17H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h14l4 4v4a2 2 0 0 1-2 2h-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="7.5" cy="17.5" r="2.5" stroke="currentColor" stroke-width="1.8"/><circle cx="17.5" cy="17.5" r="2.5" stroke="currentColor" stroke-width="1.8"/></svg>
-        <span class="nav-label">Vehicles</span>
-      </a>
-      <a href="reports.html" class="nav-item" data-section="reports">
-        <svg viewBox="0 0 24 24" fill="none" width="20" height="20"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" stroke-width="1.8"/><polyline points="14 2 14 8 20 8" stroke="currentColor" stroke-width="1.8"/></svg>
-        <span class="nav-label">Reports</span>
-      </a>
-      <a href="manual-report.html" class="nav-item active" data-section="manual">
-        <svg viewBox="0 0 24 24" fill="none" width="20" height="20"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><polyline points="17 8 12 3 7 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="12" y1="3" x2="12" y2="15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-        <span class="nav-label">Manual Report</span>
-      </a>
-      <a href="profile.html" class="nav-item" data-section="profile">
-        <svg viewBox="0 0 24 24" fill="none" width="20" height="20"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="7" r="4" stroke="currentColor" stroke-width="1.8"/></svg>
-        <span class="nav-label">Profile</span>
-      </a>
-      <a href="settings.html" class="nav-item" data-section="settings">
-        <svg viewBox="0 0 24 24" fill="none" width="20" height="20"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" stroke="currentColor" stroke-width="1.8"/></svg>
-        <span class="nav-label">Settings</span>
-      </a>
-    </nav>
+    <div class="sidebar-inner">
+
+      <nav class="sidebar-nav">
+
+        <div class="nav-item" data-section="dashboard" id="nav-dashboard">
+          <div class="nav-icon">
+            <svg viewBox="0 0 24 24" fill="none" width="20" height="20">
+              <rect x="3" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.8"/>
+              <rect x="14" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.8"/>
+              <rect x="3" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.8"/>
+              <rect x="14" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.8"/>
+            </svg>
+          </div>
+          <span class="nav-label">Dashboard</span>
+          <div class="nav-tooltip">Dashboard</div>
+        </div>
+
+        <div class="nav-item" data-section="vehicles" id="nav-vehicles">
+          <div class="nav-icon">
+            <svg viewBox="0 0 24 24" fill="none" width="20" height="20">
+              <path d="M5 17H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h14l4 4v4a2 2 0 0 1-2 2h-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              <circle cx="7.5" cy="17.5" r="2.5" stroke="currentColor" stroke-width="1.8"/>
+              <circle cx="17.5" cy="17.5" r="2.5" stroke="currentColor" stroke-width="1.8"/>
+            </svg>
+          </div>
+          <span class="nav-label">My Vehicles</span>
+          <div class="nav-tooltip">My Vehicles</div>
+        </div>
+
+        <div class="nav-item" data-section="reports" id="nav-reports">
+          <div class="nav-icon">
+            <svg viewBox="0 0 24 24" fill="none" width="20" height="20">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <span class="nav-label">Past Reports</span>
+          <div class="nav-tooltip">Past Reports</div>
+        </div>
+
+        <div class="nav-item active" data-section="manual" id="nav-manual">
+          <div class="nav-icon">
+            <svg viewBox="0 0 24 24" fill="none" width="20" height="20">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              <polyline points="17 8 12 3 7 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              <line x1="12" y1="3" x2="12" y2="15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <span class="nav-label">Manual Report</span>
+          <div class="nav-tooltip">Manual Report</div>
+        </div>
+
+        <div class="nav-item" data-section="profile" id="nav-profile">
+          <div class="nav-icon">
+            <svg viewBox="0 0 24 24" fill="none" width="20" height="20">
+              <circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.8"/>
+              <path d="M4 20c0-4 3.582-7 8-7s8 3 8 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <span class="nav-label">Profile</span>
+          <div class="nav-tooltip">Profile</div>
+        </div>
+
+        <div class="nav-item" data-section="settings" id="nav-settings">
+          <div class="nav-icon">
+            <svg viewBox="0 0 24 24" fill="none" width="20" height="20">
+              <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-1.42 3.42 2 2 0 0 1-1.41-.59l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" stroke="currentColor" stroke-width="1.8"/>
+            </svg>
+          </div>
+          <span class="nav-label">Settings</span>
+          <div class="nav-tooltip">Settings</div>
+        </div>
+
+      </nav>
+
+      <!-- Version -->
+      <div class="sidebar-version">v1.0.0</div>
+
+    </div>
   </aside>
 
-  <!-- CONTENT -->
-  <main class="content-area" id="content-area">
-    <div class="section-header reveal">
-      <div>
-        <h1 class="section-title">Manual Report</h1>
-        <p class="section-subtitle">Upload OBD-II CSV data → AI analyses → Download PDF report</p>
+  <!-- ═══════════════════════════════════════
+       MAIN CONTENT
+  ════════════════════════════════════════ -->
+  <main class="main-content" id="main-content">
+
+    <!-- OBD Connection Banner -->
+    <div id="obd-banner" class="obd-banner hidden">
+      <div class="banner-left">
+        <span class="banner-dot"></span>
+        <span id="banner-text">OBD Scanner Connected</span>
+        <span id="banner-port" class="banner-port"></span>
+      </div>
+      <div class="banner-right">
+        <span class="live-badge">● LIVE</span>
+        <button id="banner-dismiss" class="banner-dismiss">✕</button>
       </div>
     </div>
 
-    <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:24px;align-items:start">
+    <!-- Dynamic content loads here — manual-report.js injects into this -->
+    <div id="content-area"></div>
 
-      <!-- LEFT: Upload Card -->
-      <div class="glass-card reveal" style="padding:28px">
-        <div style="font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--text);margin-bottom:20px;display:flex;align-items:center;gap:10px">
-          <span style="color:var(--accent)">📊</span> Upload Vehicle Data CSV
-        </div>
+    <!-- Footer -->
+    <footer class="dash-footer">
+      <span>&copy; 2025 Vexis</span>
+      <span>AI Vehicle Intelligence Platform</span>
+      <span>v1.0.0</span>
+    </footer>
 
-        <!-- Drop Zone -->
-        <div class="upload-zone" id="upload-zone">
-          <div class="upload-icon" id="upload-icon">📁</div>
-          <div class="upload-title" id="upload-title">Drop CSV here or click to browse</div>
-          <div class="upload-sub" id="upload-sub">Supports .csv files with OBD-II sensor columns</div>
-          <input type="file" id="csv-file-input" accept=".csv" style="display:none"/>
-        </div>
-
-        <!-- Progress -->
-        <div class="progress-bar-wrap" id="progress-wrap">
-          <div class="progress-bar-fill" id="progress-fill"></div>
-        </div>
-
-        <!-- Status -->
-        <div class="status-card info" id="status-card">
-          <span id="status-icon" style="font-size:24px">⏳</span>
-          <div>
-            <div id="status-title" style="font-weight:600;color:var(--text);font-size:14px">Processing...</div>
-            <div id="status-msg"   style="font-size:12px;color:var(--muted);margin-top:2px">Running ML analysis on your data</div>
-          </div>
-        </div>
-
-        <!-- Analyze Button -->
-        <button class="analyze-btn" id="analyze-btn" disabled>
-          <svg viewBox="0 0 24 24" fill="none" width="20" height="20">
-            <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span id="analyze-btn-text">Select a CSV file first</span>
-        </button>
-
-        <!-- Download Template -->
-        <div style="text-align:center;margin-top:16px">
-          <button id="download-template-btn" style="background:none;border:1px solid rgba(255,255,255,0.1);color:var(--muted);padding:8px 20px;border-radius:8px;cursor:pointer;font-size:12px;transition:all 0.2s" onmouseover="this.style.borderColor='rgba(0,229,255,0.3)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='rgba(255,255,255,0.1)';this.style.color='var(--muted)'">
-            ⬇ Download Sample CSV Template
-          </button>
-        </div>
-      </div>
-
-      <!-- RIGHT: Instructions -->
-      <div style="display:flex;flex-direction:column;gap:20px">
-
-        <!-- How it works -->
-        <div class="glass-card reveal" style="padding:24px">
-          <div style="font-family:var(--font-display);font-size:14px;font-weight:700;color:var(--text);margin-bottom:16px">How It Works</div>
-          <div class="steps-list">
-            <div class="step-item">
-              <div class="step-num">1</div>
-              <div class="step-text">
-                <div class="step-title">Prepare your CSV</div>
-                Download the template or export OBD data from your scanner app
-              </div>
-            </div>
-            <div class="step-item">
-              <div class="step-num">2</div>
-              <div class="step-text">
-                <div class="step-title">Upload the file</div>
-                Drag & drop or click to select your .csv file (min. 5 rows)
-              </div>
-            </div>
-            <div class="step-item">
-              <div class="step-num">3</div>
-              <div class="step-text">
-                <div class="step-title">AI analyses your data</div>
-                Our ML models score each sensor reading across 5 components
-              </div>
-            </div>
-            <div class="step-item">
-              <div class="step-num">4</div>
-              <div class="step-text">
-                <div class="step-title">Download your PDF</div>
-                Get a full report with scores, issues, and recommendations
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Required Columns -->
-        <div class="glass-card reveal" style="padding:24px">
-          <div style="font-family:var(--font-display);font-size:14px;font-weight:700;color:var(--text);margin-bottom:4px">Required CSV Columns</div>
-          <div style="font-size:12px;color:var(--muted);margin-bottom:14px">All 9 columns must be present (numeric values)</div>
-          <div class="csv-columns">
-            <div class="col-badge">rpm<span>Engine RPM</span></div>
-            <div class="col-badge">speed<span>Speed km/h</span></div>
-            <div class="col-badge">load<span>Engine Load %</span></div>
-            <div class="col-badge">coolant_temp<span>Coolant °C</span></div>
-            <div class="col-badge">throttle_pos<span>Throttle %</span></div>
-            <div class="col-badge">intake_temp<span>Intake Air °C</span></div>
-            <div class="col-badge">maf<span>MAF g/s</span></div>
-            <div class="col-badge">stft<span>Short Fuel Trim</span></div>
-            <div class="col-badge">ltft<span>Long Fuel Trim</span></div>
-          </div>
-          <div class="sample-row">rpm,speed,load,coolant_temp,throttle_pos,intake_temp,maf,stft,ltft<br>1800,45,42,87,22,35,8.5,1.2,-0.8<br>2100,60,55,89,28,36,11.2,0.8,-1.1</div>
-        </div>
-
-      </div>
-    </div>
   </main>
 
-</div>
+  <!-- ═══════════════════════════════════════
+       MOBILE BOTTOM NAV
+  ════════════════════════════════════════ -->
+  <nav class="mobile-nav" id="mobile-nav">
 
-<!-- Mobile Nav -->
-<nav class="mobile-nav" id="mobile-nav">
-  <a href="dashboard.html"    class="mobile-nav-item" data-section="dashboard"><svg viewBox="0 0 24 24" fill="none" width="20" height="20"><rect x="3" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.8"/><rect x="14" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.8"/><rect x="3" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.8"/><rect x="14" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.8"/></svg><span>Dashboard</span></a>
-  <a href="vehicles.html"     class="mobile-nav-item" data-section="vehicles"><svg viewBox="0 0 24 24" fill="none" width="20" height="20"><path d="M5 17H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h14l4 4v4a2 2 0 0 1-2 2h-2" stroke="currentColor" stroke-width="1.8"/><circle cx="7.5" cy="17.5" r="2.5" stroke="currentColor" stroke-width="1.8"/><circle cx="17.5" cy="17.5" r="2.5" stroke="currentColor" stroke-width="1.8"/></svg><span>Vehicles</span></a>
-  <a href="manual-report.html" class="mobile-nav-item active" data-section="manual"><svg viewBox="0 0 24 24" fill="none" width="20" height="20"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" stroke-width="1.8"/><polyline points="17 8 12 3 7 8" stroke="currentColor" stroke-width="1.8"/><line x1="12" y1="3" x2="12" y2="15" stroke="currentColor" stroke-width="1.8"/></svg><span>Manual</span></a>
-  <a href="profile.html"      class="mobile-nav-item" data-section="profile"><svg viewBox="0 0 24 24" fill="none" width="20" height="20"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="7" r="4" stroke="currentColor" stroke-width="1.8"/></svg><span>Profile</span></a>
-</nav>
+    <div class="mobile-nav-item" data-section="dashboard">
+      <svg viewBox="0 0 24 24" fill="none" width="22" height="22">
+        <rect x="3" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.8"/>
+        <rect x="14" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.8"/>
+        <rect x="3" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.8"/>
+        <rect x="14" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.8"/>
+      </svg>
+      <span>Home</span>
+    </div>
+
+    <div class="mobile-nav-item" data-section="vehicles">
+      <svg viewBox="0 0 24 24" fill="none" width="22" height="22">
+        <path d="M5 17H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h14l4 4v4a2 2 0 0 1-2 2h-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <circle cx="7.5" cy="17.5" r="2.5" stroke="currentColor" stroke-width="1.8"/>
+        <circle cx="17.5" cy="17.5" r="2.5" stroke="currentColor" stroke-width="1.8"/>
+      </svg>
+      <span>Vehicles</span>
+    </div>
+
+    <div class="mobile-nav-item active" data-section="manual">
+      <svg viewBox="0 0 24 24" fill="none" width="22" height="22">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <polyline points="17 8 12 3 7 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <line x1="12" y1="3" x2="12" y2="15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+      <span>Manual</span>
+    </div>
+
+    <div class="mobile-nav-item" data-section="profile">
+      <svg viewBox="0 0 24 24" fill="none" width="22" height="22">
+        <circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.8"/>
+        <path d="M4 20c0-4 3.582-7 8-7s8 3 8 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+      <span>Profile</span>
+    </div>
+
+    <div class="mobile-nav-item" data-section="settings">
+      <svg viewBox="0 0 24 24" fill="none" width="22" height="22">
+        <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" stroke="currentColor" stroke-width="1.8"/>
+      </svg>
+      <span>Settings</span>
+    </div>
+
+  </nav>
+
+</div><!-- /app-layout -->
 
 </body>
 </html>
