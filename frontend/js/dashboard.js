@@ -4,11 +4,21 @@
    ================================================================ */
 
 import {
-  apiGet, apiPost, showToast,
+  apiGet, apiPost, apiPut, apiDelete, showToast,
   animateNumber, getBadgeClass,
-  initRevealAnimations, getUser,
+  initRevealAnimations, getUser, setAuth,
+  updateOBDStatusBanner,
   API_BASE
 } from './api.js';
+
+import {
+  auth,
+  updatePassword,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  updateProfile as firebaseUpdateProfile,
+  db, collection, addDoc, getDocs, getDoc, setDoc, updateDoc, query, where, deleteDoc, doc, orderBy, serverTimestamp
+} from './firebase.js';
 
 import {
   isWebSerialSupported,
@@ -815,12 +825,14 @@ function updateConnectionUI(connected) {
     if (metricsSection) metricsSection.style.display = 'block';
     if (startBtn)  { startBtn.disabled = false; }
     if (startHint)   startHint.textContent = 'OBD connected — ready to analyze';
+    updateOBDStatusBanner({ connected: true, port: 'USB' });
   } else {
     if (disconnView)    disconnView.style.display    = 'block';
     if (connView)       connView.style.display       = 'none';
     if (metricsSection) metricsSection.style.display = 'none';
     if (startBtn)  { startBtn.disabled = true; }
     if (startHint)   startHint.textContent = 'Connect OBD scanner to enable';
+    updateOBDStatusBanner({ connected: false });
   }
 }
 
@@ -1027,8 +1039,7 @@ function wireOBDHandlers() {
   if (disconnBtn) {
     disconnBtn.addEventListener('click', async () => {
       await serialDisconnect();
-      updateConnectionUI(false);
-      showToast('OBD Scanner disconnected.', 'info');
+      window.location.reload();
     });
   }
 
@@ -1259,21 +1270,190 @@ async function loadVehiclesSection(container) {
       <h1 class="section-title">My Vehicles</h1>
       <p class="section-subtitle">Manage your registered vehicles</p>
     </div>
-    <button class="btn-primary">+ Add Vehicle</button>
+    <button class="btn-primary" onclick="document.getElementById('add-vehicle-modal').style.display='flex'">+ Add Vehicle</button>
   </div>
-  <div class="placeholder-section reveal">
-    <div class="placeholder-icon">
-      <svg viewBox="0 0 24 24" fill="none" width="36" height="36">
-        <path d="M5 17H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h14l4 4v4a2 2 0 0 1-2 2h-2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-        <circle cx="7.5" cy="17.5" r="2.5" stroke="currentColor" stroke-width="1.6"/>
-        <circle cx="17.5" cy="17.5" r="2.5" stroke="currentColor" stroke-width="1.6"/>
-      </svg>
+  
+  <div id="vehicles-list-container">
+    <div class="placeholder-section reveal">
+      <p class="placeholder-title">Loading Vehicles...</p>
     </div>
-    <p class="placeholder-title">No Vehicles Added Yet</p>
-    <p class="placeholder-sub">Connect your OBD scanner to auto-detect your vehicle, or add one manually.</p>
-    <button class="btn-primary" onclick="window._connectOBD && window._connectOBD()">🔌 Connect OBD Scanner</button>
+  </div>
+
+  <!-- Add Vehicle Modal -->
+  <div id="add-vehicle-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);backdrop-filter:blur(5px);z-index:9999;align-items:center;justify-content:center;padding:20px;">
+    <div class="glass-card reveal" style="width:100%;max-width:500px;padding:32px;position:relative">
+      <button onclick="document.getElementById('add-vehicle-modal').style.display='none'" style="position:absolute;top:20px;right:20px;background:none;border:none;color:var(--text);font-size:24px;cursor:pointer">&times;</button>
+      <h2 style="font-family:var(--font-display);font-size:24px;color:var(--accent);margin-bottom:8px">Add New Vehicle</h2>
+      <p style="color:var(--muted);font-size:14px;margin-bottom:24px">Register a new car for OBD analysis.</p>
+      
+      <div id="vehicle-error" class="error-msg"></div>
+      
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+        <div class="input-group">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">Vehicle Nickname</label>
+          <input type="text" id="veh-name" placeholder="e.g. My Daily Driver" style="background:rgba(255,255,255,0.05);border:1px solid var(--glass-border);border-radius:var(--radius-sm);padding:12px 16px;color:var(--text);width:100%;box-sizing:border-box" required/>
+        </div>
+        <div class="input-group">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">Car Model</label>
+          <input type="text" id="veh-model" placeholder="e.g. Honda Civic" style="background:rgba(255,255,255,0.05);border:1px solid var(--glass-border);border-radius:var(--radius-sm);padding:12px 16px;color:var(--text);width:100%;box-sizing:border-box" required/>
+        </div>
+      </div>
+      
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+        <div class="input-group">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">Plate Number</label>
+          <input type="text" id="veh-plate" placeholder="e.g. ABC-1234" style="background:rgba(255,255,255,0.05);border:1px solid var(--glass-border);border-radius:var(--radius-sm);padding:12px 16px;color:var(--text);width:100%;box-sizing:border-box" required/>
+        </div>
+        <div class="input-group">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">Purchase Year</label>
+          <input type="text" id="veh-purchase" placeholder="e.g. 2020" style="background:rgba(255,255,255,0.05);border:1px solid var(--glass-border);border-radius:var(--radius-sm);padding:12px 16px;color:var(--text);width:100%;box-sizing:border-box" required/>
+        </div>
+      </div>
+      
+      <div class="input-group" style="margin-bottom:24px">
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">Owner Type</label>
+        <select id="veh-owner" style="background:rgba(255,255,255,0.05);border:1px solid var(--glass-border);border-radius:var(--radius-sm);padding:12px 16px;color:var(--text);width:100%;box-sizing:border-box;font-family:var(--font-body)">
+          <option value="1" style="background:#111">1st Owner</option>
+          <option value="2" style="background:#111">2nd Owner</option>
+          <option value="3" style="background:#111">3rd Owner (or more)</option>
+        </select>
+      </div>
+
+      <button id="submit-vehicle-btn" class="btn-primary btn-full">Save Vehicle</button>
+    </div>
   </div>`;
-  initRevealAnimations();
+  
+  const listContainer = document.getElementById('vehicles-list-container');
+  
+  async function fetchVehicles() {
+    try {
+      const user = auth.currentUser;
+      if (!user) throw new Error("Not authenticated");
+      
+      const q = query(collection(db, "vehicles"), where("userId", "==", user.uid));
+      const querySnapshot = await getDocs(q);
+      
+      let vehicles = [];
+      querySnapshot.forEach((doc) => {
+        vehicles.push({ id: doc.id, ...doc.data() });
+      });
+      
+      vehicles.sort((a, b) => {
+        const t1 = a.created_at ? a.created_at.toMillis() : 0;
+        const t2 = b.created_at ? b.created_at.toMillis() : 0;
+        return t2 - t1;
+      });
+
+      if (vehicles.length === 0) {
+        listContainer.innerHTML = `
+          <div class="placeholder-section reveal">
+            <div class="placeholder-icon">
+              <svg viewBox="0 0 24 24" fill="none" width="36" height="36">
+                <path d="M5 17H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h14l4 4v4a2 2 0 0 1-2 2h-2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                <circle cx="7.5" cy="17.5" r="2.5" stroke="currentColor" stroke-width="1.6"/>
+                <circle cx="17.5" cy="17.5" r="2.5" stroke="currentColor" stroke-width="1.6"/>
+              </svg>
+            </div>
+            <p class="placeholder-title">No Vehicles Added Yet</p>
+            <p class="placeholder-sub">Click 'Add Vehicle' above to register your first car.</p>
+          </div>`;
+      } else {
+        listContainer.innerHTML = `
+          <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(300px, 1fr));gap:20px;">
+            ${vehicles.map(v => `
+              <div class="glass-card reveal" style="padding:24px;position:relative">
+                <button onclick="window.deleteVehicle(${v.id})" style="position:absolute;top:16px;right:16px;background:rgba(255,255,255,0.1);border:none;color:var(--muted);width:32px;height:32px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 0.2s" onmouseover="this.style.background='rgba(255,23,68,0.2)';this.style.color='#ff1744'" onmouseout="this.style.background='rgba(255,255,255,0.1)';this.style.color='var(--muted)'">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <div style="width:48px;height:48px;border-radius:12px;background:rgba(0,229,255,0.1);color:var(--accent);display:flex;align-items:center;justify-content:center;margin-bottom:16px">
+                  <svg viewBox="0 0 24 24" fill="none" width="28" height="28">
+                    <path d="M5 17H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h14l4 4v4a2 2 0 0 1-2 2h-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                    <circle cx="7.5" cy="17.5" r="2.5" stroke="currentColor" stroke-width="1.8"/>
+                    <circle cx="17.5" cy="17.5" r="2.5" stroke="currentColor" stroke-width="1.8"/>
+                  </svg>
+                </div>
+                <h3 style="font-family:var(--font-display);font-size:18px;margin-bottom:4px;color:var(--text)">${v.name}</h3>
+                <p style="color:var(--muted);font-size:13px;margin-bottom:16px">${v.model}</p>
+                <div style="background:rgba(0,0,0,0.2);padding:12px;border-radius:8px;font-size:12px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                  <div><span style="color:var(--muted)">Plate:</span> <span style="color:var(--text-dim);font-family:monospace">${v.plate_number||'N/A'}</span></div>
+                  <div><span style="color:var(--muted)">Year:</span> <span style="color:var(--text-dim)">${v.purchase_year||'N/A'}</span></div>
+                  <div><span style="color:var(--muted)">Owner:</span> <span style="color:var(--text-dim)">${v.owner_number ? v.owner_number + (v.owner_number===1?'st':v.owner_number===2?'nd':v.owner_number===3?'rd':'th') : 'N/A'}</span></div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
+      initRevealAnimations();
+    } catch(e) {
+      listContainer.innerHTML = `<p style="color:var(--danger)">Error loading vehicles: ${e.message}</p>`;
+    }
+  }
+
+  window.deleteVehicle = async function(id) {
+    if(!confirm('Are you sure you want to delete this vehicle?')) return;
+    try {
+      await deleteDoc(doc(db, "vehicles", id));
+      showToast('Vehicle deleted successfully', 'success');
+      fetchVehicles();
+    } catch(e) {
+      showToast('Error deleting vehicle', 'error');
+    }
+  };
+
+  fetchVehicles();
+  
+  const submitBtn = document.getElementById('submit-vehicle-btn');
+  if(submitBtn) {
+    submitBtn.addEventListener('click', async () => {
+      const name = document.getElementById('veh-name').value.trim();
+      const model = document.getElementById('veh-model').value.trim();
+      const plate = document.getElementById('veh-plate').value.trim();
+      const purchase = document.getElementById('veh-purchase').value.trim();
+      const owner = document.getElementById('veh-owner').value;
+      const errorEl = document.getElementById('vehicle-error');
+      
+      errorEl.classList.remove('visible');
+      if(!name || !model || !plate || !purchase) {
+        errorEl.textContent = 'Please fill all fields.';
+        errorEl.classList.add('visible');
+        return;
+      }
+      
+      submitBtn.textContent = 'Saving...';
+      submitBtn.disabled = true;
+      try {
+        const user = auth.currentUser;
+        if (!user) throw new Error("Not authenticated");
+        
+        await addDoc(collection(db, "vehicles"), {
+          userId: user.uid,
+          name: name,
+          model: model,
+          plate_number: plate,
+          purchase_year: purchase,
+          owner_number: owner,
+          created_at: serverTimestamp()
+        });
+        document.getElementById('add-vehicle-modal').style.display='none';
+        showToast('Vehicle added successfully!', 'success');
+        
+        // Reset form
+        document.getElementById('veh-name').value='';
+        document.getElementById('veh-model').value='';
+        document.getElementById('veh-plate').value='';
+        document.getElementById('veh-purchase').value='';
+        
+        fetchVehicles();
+      } catch (e) {
+        errorEl.textContent = e.message || 'Failed to add vehicle.';
+        errorEl.classList.add('visible');
+      } finally {
+        submitBtn.textContent = 'Save Vehicle';
+        submitBtn.disabled = false;
+      }
+    });
+  }
 }
 
 async function loadReportsSection(container) {
@@ -1297,9 +1477,20 @@ async function loadReportsSection(container) {
   </div>`;
 
   try {
-    const data = await apiGet('/reports');
-    const reports = data.reports || data || [];
-    const body   = document.getElementById('reports-body');
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('Not authenticated');
+
+    const q = query(collection(db, 'reports'), where('userId', '==', currentUser.uid));
+    const snap = await getDocs(q);
+    let reports = [];
+    snap.forEach(d => reports.push({ id: d.id, ...d.data() }));
+    reports.sort((a, b) => {
+      const t1 = a.created_at ? a.created_at.toMillis() : 0;
+      const t2 = b.created_at ? b.created_at.toMillis() : 0;
+      return t2 - t1;
+    });
+
+    const body = document.getElementById('reports-body');
     if (!body) return;
     if (reports.length === 0) {
       body.innerHTML = `<div class="placeholder-section reveal">
@@ -1312,77 +1503,246 @@ async function loadReportsSection(container) {
         <table style="width:100%;border-collapse:collapse;font-family:var(--font-body);font-size:13px">
           <thead>
             <tr style="border-bottom:1px solid var(--glass-border)">
-              ${['Date','Score','Status','Engine','Fuel','Download'].map(h=>`
+              ${['Date','Score','Status','Engine','Fuel'].map(h=>`
                 <th style="padding:14px 16px;text-align:left;color:var(--muted);font-weight:600;letter-spacing:1px;font-size:11px;text-transform:uppercase">${h}</th>`).join('')}
             </tr>
           </thead>
           <tbody>
-            ${reports.map(r => `
+            ${reports.map(r => {
+              const ts = r.created_at ? new Date(r.created_at.toMillis()).toLocaleDateString() : 'N/A';
+              return `
             <tr style="border-bottom:1px solid rgba(255,255,255,0.04);transition:background 0.2s" onmouseenter="this.style.background='rgba(0,229,255,0.03)'" onmouseleave="this.style.background=''">
-              <td style="padding:14px 16px;color:var(--text-dim)">${new Date(r.created_at||r.timestamp).toLocaleDateString()}</td>
+              <td style="padding:14px 16px;color:var(--text-dim)">${ts}</td>
               <td style="padding:14px 16px"><span style="font-family:var(--font-display);color:${scoreColor(r.overall_score||0)};font-weight:700">${Math.round(r.overall_score||0)}</span></td>
               <td style="padding:14px 16px"><span class="badge ${getBadgeClass(r.category||scoreLabel(r.overall_score||0))}">${r.category||scoreLabel(r.overall_score||0)}</span></td>
               <td style="padding:14px 16px;color:${scoreColor(r.engine_score||0)}">${Math.round(r.engine_score||0)}</td>
               <td style="padding:14px 16px;color:${scoreColor(r.fuel_score||0)}">${Math.round(r.fuel_score||0)}</td>
-              <td style="padding:14px 16px">
-                <a href="${API_BASE}/reports/download/${r.id}" target="_blank" class="btn-outline" style="padding:6px 14px;font-size:12px;text-decoration:none">⬇ PDF</a>
-              </td>
-            </tr>`).join('')}
+            </tr>`;
+            }).join('')}
           </tbody>
         </table>
       </div>`;
     }
   } catch(e) {
-    document.getElementById('reports-body').innerHTML =
-      `<div class="placeholder-section reveal"><p class="placeholder-title">Could not load reports.</p><p class="placeholder-sub">${e.message}</p></div>`;
+    const body = document.getElementById('reports-body');
+    if (body) body.innerHTML = `<div class="placeholder-section reveal"><p class="placeholder-title">Could not load reports.</p><p class="placeholder-sub">${e.message}</p></div>`;
   }
   initRevealAnimations();
 }
 
 async function loadProfileSection(container) {
-  const user = getUser() || {};
+  const currentUser = auth.currentUser;
+  let user = { name: '', email: currentUser?.email || '', alternate_contact: '', profile_photo_url: '' };
+  
+  // Fetch from Firestore
+  try {
+    if (currentUser) {
+      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+      if (userDoc.exists()) {
+        user = { ...user, ...userDoc.data() };
+      } else {
+        // Create initial doc
+        await setDoc(doc(db, 'users', currentUser.uid), {
+          name: currentUser.displayName || '',
+          email: currentUser.email || '',
+          alternate_contact: '',
+          profile_photo_url: '',
+          created_at: serverTimestamp()
+        });
+        user.name = currentUser.displayName || '';
+      }
+    }
+  } catch (e) {
+    console.warn('Could not fetch profile from Firestore', e);
+  }
+
   const initials = (user.name||'VX').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+  const photoUrl = user.profile_photo_url || currentUser?.photoURL || '';
+
   container.innerHTML = `
   <div class="section-header">
     <div><h1 class="section-title">My Profile</h1><p class="section-subtitle">Manage your account</p></div>
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+    
+    <!-- Profile Info Update -->
     <div class="glass-card reveal" style="padding:28px">
       <div style="text-align:center;margin-bottom:24px">
-        <div style="width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent3));display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-size:22px;font-weight:700;color:#000;margin:0 auto 12px">${initials}</div>
+        ${photoUrl 
+          ? `<img src="${photoUrl}" style="width:72px;height:72px;border-radius:50%;object-fit:cover;margin:0 auto 12px;display:block;border:2px solid rgba(255,255,255,0.1)"/>`
+          : `<div style="width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent3));display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-size:22px;font-weight:700;color:#000;margin:0 auto 12px">${initials}</div>`
+        }
         <div style="font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--text)">${user.name||'User'}</div>
         <div style="font-size:13px;color:var(--muted)">${user.email||''}</div>
       </div>
+      
       <div class="input-group" style="margin-bottom:14px">
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">Full Name</label>
         <input type="text" id="profile-name" value="${user.name||''}" placeholder="Full name" style="background:rgba(255,255,255,0.05);border:1px solid var(--glass-border);border-radius:var(--radius-sm);padding:12px 16px;color:var(--text);width:100%;font-family:var(--font-body);box-sizing:border-box"/>
       </div>
-      <div class="input-group" style="margin-bottom:20px">
+      
+      <div class="input-group" style="margin-bottom:14px">
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">Primary Email (Unchangeable)</label>
         <input type="email" value="${user.email||''}" disabled style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:var(--radius-sm);padding:12px 16px;color:var(--muted);width:100%;font-family:var(--font-body);box-sizing:border-box"/>
       </div>
-      <button class="btn-primary btn-full" onclick="showToast('Profile updated!','success')">Update Profile</button>
+      
+      <div class="input-group" style="margin-bottom:14px">
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">Alternate Mobile or Email</label>
+        <input type="text" id="profile-alt" value="${user.alternate_contact||''}" placeholder="Phone or email" style="background:rgba(255,255,255,0.05);border:1px solid var(--glass-border);border-radius:var(--radius-sm);padding:12px 16px;color:var(--text);width:100%;font-family:var(--font-body);box-sizing:border-box"/>
+      </div>
+      
+      <div class="input-group" style="margin-bottom:20px">
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">Profile Photo URL (Cloudinary etc.)</label>
+        <input type="text" id="profile-photo" value="${user.profile_photo_url||''}" placeholder="https://..." style="background:rgba(255,255,255,0.05);border:1px solid var(--glass-border);border-radius:var(--radius-sm);padding:12px 16px;color:var(--text);width:100%;font-family:var(--font-body);box-sizing:border-box"/>
+      </div>
+
+      <button id="update-profile-btn" class="btn-primary btn-full">Update Profile</button>
     </div>
+    
+    <!-- Password Update -->
     <div class="glass-card reveal" style="padding:28px">
       <div style="font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--text);margin-bottom:20px">Change Password</div>
       <div id="pw-error" class="error-msg"></div>
-      ${['current-pw:Current Password','new-pw:New Password','confirm-pw:Confirm Password'].map(s=>{
-        const [id,lbl]=s.split(':');
-        return `<div style="margin-bottom:14px">
-          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">${lbl}</label>
-          <input type="password" id="${id}" placeholder="••••••••" style="background:rgba(255,255,255,0.05);border:1px solid var(--glass-border);border-radius:var(--radius-sm);padding:12px 16px;color:var(--text);width:100%;font-family:var(--font-body);box-sizing:border-box"/>
-        </div>`;}).join('')}
-      <button class="btn-primary btn-full" style="margin-top:8px" onclick="
-        const np=document.getElementById('new-pw').value,cp=document.getElementById('confirm-pw').value;
-        if(np.length<8){document.getElementById('pw-error').textContent='Min 8 chars';document.getElementById('pw-error').classList.add('visible');return;}
-        if(np!==cp){document.getElementById('pw-error').textContent='Passwords do not match';document.getElementById('pw-error').classList.add('visible');return;}
-        showToast('Password updated!','success');
-      ">Update Password</button>
+      
+      <div style="margin-bottom:14px">
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">Current Password</label>
+        <input type="password" id="current-pw" placeholder="••••••••" style="background:rgba(255,255,255,0.05);border:1px solid var(--glass-border);border-radius:var(--radius-sm);padding:12px 16px;color:var(--text);width:100%;font-family:var(--font-body);box-sizing:border-box"/>
+      </div>
+      <div style="margin-bottom:14px">
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">New Password</label>
+        <input type="password" id="new-pw" placeholder="••••••••" style="background:rgba(255,255,255,0.05);border:1px solid var(--glass-border);border-radius:var(--radius-sm);padding:12px 16px;color:var(--text);width:100%;font-family:var(--font-body);box-sizing:border-box"/>
+      </div>
+      <div style="margin-bottom:20px">
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">Confirm Password</label>
+        <input type="password" id="confirm-pw" placeholder="••••••••" style="background:rgba(255,255,255,0.05);border:1px solid var(--glass-border);border-radius:var(--radius-sm);padding:12px 16px;color:var(--text);width:100%;font-family:var(--font-body);box-sizing:border-box"/>
+      </div>
+      
+      <button id="update-pw-btn" class="btn-primary btn-full">Update Password</button>
     </div>
   </div>`;
+  
+  // Attach event listeners after rendering
+  const updateProfileBtn = container.querySelector('#update-profile-btn');
+  const updatePwBtn = container.querySelector('#update-pw-btn');
+  
+  if (updateProfileBtn) {
+    updateProfileBtn.addEventListener('click', async () => {
+      const name = container.querySelector('#profile-name').value.trim();
+      const alt = container.querySelector('#profile-alt').value.trim();
+      const photo = container.querySelector('#profile-photo').value.trim();
+      
+      updateProfileBtn.textContent = 'Updating...';
+      updateProfileBtn.disabled = true;
+      
+      try {
+        const currentUser = auth.currentUser;
+        if (!currentUser) throw new Error('Not logged in');
+        
+        // Update Firebase Auth display name
+        if (name) {
+          await firebaseUpdateProfile(currentUser, { displayName: name });
+        }
+        
+        // Update/Create Firestore user doc
+        await setDoc(doc(db, 'users', currentUser.uid), {
+          name: name,
+          email: currentUser.email,
+          alternate_contact: alt,
+          profile_photo_url: photo,
+          updated_at: serverTimestamp()
+        }, { merge: true });
+        
+        // Update header
+        const headerName = document.getElementById('user-name');
+        if (headerName) headerName.textContent = name || currentUser.email;
+        const headerAvatar = document.getElementById('user-avatar');
+        if (headerAvatar) headerAvatar.textContent = (name||'VX').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+        
+        showToast('Profile updated successfully!', 'success');
+        setTimeout(() => loadProfileSection(container), 800);
+      } catch (err) {
+        showToast(err.message || 'Failed to update profile.', 'error');
+      } finally {
+        updateProfileBtn.textContent = 'Update Profile';
+        updateProfileBtn.disabled = false;
+      }
+    });
+  }
+
+  if (updatePwBtn) {
+    updatePwBtn.addEventListener('click', async () => {
+      const cp = container.querySelector('#current-pw').value;
+      const np = container.querySelector('#new-pw').value;
+      const cfp = container.querySelector('#confirm-pw').value;
+      const errEl = container.querySelector('#pw-error');
+      
+      errEl.classList.remove('visible');
+      
+      if (!cp || !np || !cfp) {
+        errEl.textContent = 'Please fill all password fields.';
+        errEl.classList.add('visible');
+        return;
+      }
+      if (np.length < 8) {
+        errEl.textContent = 'New password must be at least 8 characters.';
+        errEl.classList.add('visible');
+        return;
+      }
+      if (np !== cfp) {
+        errEl.textContent = 'New passwords do not match.';
+        errEl.classList.add('visible');
+        return;
+      }
+      
+      updatePwBtn.textContent = 'Updating...';
+      updatePwBtn.disabled = true;
+      
+      try {
+        const currentUser = auth.currentUser;
+        if (!currentUser) throw new Error("Not logged in");
+        
+        // Re-authenticate first
+        const credential = EmailAuthProvider.credential(currentUser.email, cp);
+        await reauthenticateWithCredential(currentUser, credential);
+        
+        // Update password
+        await updatePassword(currentUser, np);
+        
+        showToast('Password updated successfully!', 'success');
+        container.querySelector('#current-pw').value = '';
+        container.querySelector('#new-pw').value = '';
+        container.querySelector('#confirm-pw').value = '';
+      } catch (err) {
+        let msg = 'Failed to update password.';
+        if (err.code === 'auth/invalid-credential') msg = 'Current password is incorrect.';
+        if (err.code === 'auth/weak-password') msg = 'New password is too weak.';
+        
+        errEl.textContent = msg;
+        errEl.classList.add('visible');
+      } finally {
+        updatePwBtn.textContent = 'Update Password';
+        updatePwBtn.disabled = false;
+      }
+    });
+  }
+
   initRevealAnimations();
 }
 
-function loadSettingsSection(container) {
-  const s = JSON.parse(localStorage.getItem('vexis_settings') || '{}');
+async function loadSettingsSection(container) {
+  const currentUser = auth.currentUser;
+  let s = {};
+  // Load from Firestore first, fallback to localStorage
+  try {
+    if (currentUser) {
+      const snap = await getDoc(doc(db, 'settings', currentUser.uid));
+      if (snap.exists()) s = snap.data();
+      else s = JSON.parse(localStorage.getItem('vexis_settings') || '{}');
+    }
+  } catch (e) {
+    s = JSON.parse(localStorage.getItem('vexis_settings') || '{}');
+  }
+
   container.innerHTML = `
   <div class="section-header">
     <div><h1 class="section-title">Settings</h1><p class="section-subtitle">Configure Vexis preferences</p></div>
@@ -1417,18 +1777,28 @@ function loadSettingsSection(container) {
       </select>
     </div>
 
-    <button class="btn-primary" style="width:100%;padding:14px" onclick="
-      const cfg={
-        notif:document.getElementById('toggle-notif').checked,
-        imperial:document.getElementById('toggle-imperial').checked,
-        autoconn:document.getElementById('toggle-autoconn').checked,
-        refresh:parseInt(document.getElementById('refresh-rate').value)
-      };
-      localStorage.setItem('vexis_settings',JSON.stringify(cfg));
-      showToast('Settings saved!','success');
-    ">💾 Save Settings</button>
+    <button id="save-settings-btn" class="btn-primary" style="width:100%;padding:14px">💾 Save Settings</button>
   </div>`;
+
   initRevealAnimations();
+
+  document.getElementById('save-settings-btn')?.addEventListener('click', async () => {
+    const cfg = {
+      notif:    document.getElementById('toggle-notif').checked,
+      imperial: document.getElementById('toggle-imperial').checked,
+      autoconn: document.getElementById('toggle-autoconn').checked,
+      refresh:  parseInt(document.getElementById('refresh-rate').value)
+    };
+    localStorage.setItem('vexis_settings', JSON.stringify(cfg));
+    try {
+      if (currentUser) {
+        await setDoc(doc(db, 'settings', currentUser.uid), cfg, { merge: true });
+      }
+      showToast('Settings saved!', 'success');
+    } catch (e) {
+      showToast('Settings saved locally only.', 'info');
+    }
+  });
 }
 
 // ── Expose renderDashboard globally for sidebar.js ─────────────────

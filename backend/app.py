@@ -11,7 +11,8 @@ from ml.model_loader import load_models, MODELS
 from routes.auth import auth_bp
 from routes.predict import predict_bp
 from routes.reports import reports_bp
-from utils.jwt_helper import jwt_required
+from routes.vehicles import vehicles_bp
+from utils.firebase_auth import firebase_required, init_firebase
 from obd_reader import (
     init_socketio, connect_obd, disconnect_obd,
     get_status, get_current_data
@@ -22,6 +23,9 @@ from obd_reader import (
 # ──────────────────────────────────────────────────────────────────
 app = Flask(__name__)
 app.config.from_object(Config)
+
+# Initialize Firebase
+init_firebase()
 
 CORS(app, origins=Config.CORS_ORIGINS)
 
@@ -39,7 +43,8 @@ init_socketio(socketio)
 # ──────────────────────────────────────────────────────────────────
 app.register_blueprint(auth_bp,    url_prefix='/api/auth')
 app.register_blueprint(predict_bp, url_prefix='/api')
-app.register_blueprint(reports_bp, url_prefix='/api')
+app.register_blueprint(reports_bp,  url_prefix='/api')
+app.register_blueprint(vehicles_bp, url_prefix='/api')
 
 # ──────────────────────────────────────────────────────────────────
 # Health check
@@ -74,7 +79,7 @@ def serve_frontend(path):
 # OBD REST endpoints
 # ──────────────────────────────────────────────────────────────────
 @app.route('/api/obd/connect', methods=['POST'])
-@jwt_required
+@firebase_required
 def obd_connect():
     try:
         data = request.get_json() or {}
@@ -86,7 +91,7 @@ def obd_connect():
 
 
 @app.route('/api/obd/disconnect', methods=['POST'])
-@jwt_required
+@firebase_required
 def obd_disconnect():
     try:
         disconnect_obd()
@@ -96,7 +101,7 @@ def obd_disconnect():
 
 
 @app.route('/api/obd/status', methods=['GET'])
-@jwt_required
+@firebase_required
 def obd_status():
     try:
         return jsonify(get_status()), 200
@@ -105,7 +110,7 @@ def obd_status():
 
 
 @app.route('/api/obd/data', methods=['GET'])
-@jwt_required
+@firebase_required
 def obd_data():
     try:
         return jsonify({"success": True, "data": get_current_data()}), 200

@@ -389,6 +389,33 @@
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ── GOOGLE BUTTON ───────────────────────────────── */
+.btn-google {
+  width: 100%;
+  padding: 13px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition), transform var(--transition);
+  margin-top: 4px;
+}
+.btn-google:hover {
+  background: rgba(255,255,255,0.09);
+  border-color: rgba(255,255,255,0.22);
+  transform: translateY(-1px);
+}
+.btn-google:active { transform: translateY(0); }
+
+
 /* ── DIVIDER ─────────────────────────────────────── */
 .form-divider {
   display: flex;

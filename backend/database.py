@@ -8,13 +8,14 @@ from config import Config
 # Returns a new psycopg2 connection using Config
 # ──────────────────────────────────────────────
 def get_db():
+    ssl_mode = 'require' if Config.DB_HOST != 'localhost' else 'prefer'
     conn = psycopg2.connect(
         host=Config.DB_HOST,
         port=Config.DB_PORT,
         dbname=Config.DB_NAME,
         user=Config.DB_USER,
         password=Config.DB_PASSWORD,
-        sslmode='require',
+        sslmode=ssl_mode,
         connect_timeout=15
     )
     conn.cursor_factory = \
@@ -37,28 +38,21 @@ def init_db():
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
-                name VARCHAR(100) NOT NULL,
+                firebase_uid VARCHAR(128) UNIQUE,
                 email VARCHAR(255) UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                is_verified BOOLEAN DEFAULT FALSE,
-                verify_token TEXT,
-                verify_token_expiry TIMESTAMP,
+                name VARCHAR(100),
+                profile_photo_url VARCHAR(500),
+                alternate_contact VARCHAR(255),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
 
-        # Migrate existing tables — add columns if they don't exist
+        # Migrate existing tables — add column if it doesn't exist
         cursor.execute("""
             ALTER TABLE users
-                ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT FALSE;
-        """)
-        cursor.execute("""
-            ALTER TABLE users
-                ADD COLUMN IF NOT EXISTS verify_token TEXT;
-        """)
-        cursor.execute("""
-            ALTER TABLE users
-                ADD COLUMN IF NOT EXISTS verify_token_expiry TIMESTAMP;
+                ADD COLUMN IF NOT EXISTS firebase_uid VARCHAR(128) UNIQUE,
+                ADD COLUMN IF NOT EXISTS profile_photo_url VARCHAR(500),
+                ADD COLUMN IF NOT EXISTS alternate_contact VARCHAR(255);
         """)
         print("Table 'users' ready.")
 
@@ -71,8 +65,19 @@ def init_db():
                 model VARCHAR(100),
                 vin VARCHAR(50),
                 year INTEGER,
+                plate_number VARCHAR(50),
+                purchase_year VARCHAR(20),
+                owner_number INTEGER,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
+        """)
+        
+        # Migrate vehicles table — add columns if they don't exist
+        cursor.execute("""
+            ALTER TABLE vehicles
+                ADD COLUMN IF NOT EXISTS plate_number VARCHAR(50),
+                ADD COLUMN IF NOT EXISTS purchase_year VARCHAR(20),
+                ADD COLUMN IF NOT EXISTS owner_number INTEGER;
         """)
         print("Table 'vehicles' ready.")
 

@@ -9,13 +9,10 @@ class Config:
     DEBUG = os.getenv("DEBUG", "False") == "True"
     PORT  = int(os.getenv("PORT", 5000))
 
-    # JWT
-    JWT_EXPIRY_HOURS = 24
-
     # PostgreSQL Database
     DB_HOST     = os.getenv("DB_HOST", "localhost")
     DB_PORT     = os.getenv("DB_PORT", "5432")
-    DB_NAME     = os.getenv("DB_NAME", "autopulse_db")
+    DB_NAME     = os.getenv("DB_NAME", "vexis_db")
     DB_USER     = os.getenv("DB_USER", "postgres")
     DB_PASSWORD = os.getenv("DB_PASSWORD")
 
@@ -23,7 +20,13 @@ class Config:
     ML_MODELS_PATH = "models_pkl/"
 
     # CORS
-    CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
+    CORS_ORIGINS = os.getenv(
+        "CORS_ORIGINS", 
+        "http://localhost:3000,http://localhost:5000,https://vexis-527f2.web.app"
+    ).split(",")
+
+    # Firebase
+    FIREBASE_CREDENTIALS_PATH = os.getenv("FIREBASE_CREDENTIALS_PATH", "firebase-service-account.json")
 
     # Email / SMTP
     MAIL_EMAIL    = os.getenv("MAIL_EMAIL")
@@ -34,9 +37,6 @@ class Config:
         "BACKEND_URL",
         "http://localhost:5000"
     )
-
-    # Verification token lifetime
-    VERIFY_TOKEN_EXPIRY_HOURS = 24
 
     # OBD Feature names (must match exactly what models were trained on)
     OBD_FEATURES = [

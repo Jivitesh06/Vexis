@@ -1,13 +1,36 @@
+# ── Environment & Secrets ──────────────────────────────────────────
 backend/.env
 *.env
+.env.local
+.env.production
+
+# Firebase service account key (SECRET!)
+firebase-service-account.json
+backend/firebase-service-account.json
+
+# ── Python ────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *.pyo
+*.pyc
 .pytest_cache/
 venv/
 .venv/
 env/
+
+# ── Debug/test scripts (not for production) ──────────────────────
+backend/check_db.py
+backend/fix_db.py
+backend/test_user.py
+backend/test_import.js
+backend/test_vehicles_query.py
+test_import.js
+
+# ── OS files ──────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 *.log
+
+# ── Misc ──────────────────────────────────────────────────────────
 requirements_freeze.txt
+*.pkl.bak

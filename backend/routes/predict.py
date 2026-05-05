@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from utils.jwt_helper import jwt_required
+from utils.firebase_auth import firebase_required, get_or_create_user
 from utils.validators import validate_obd_input
 from ml.model_loader import predict_health
 from database import execute_query
@@ -16,7 +16,7 @@ predict_bp = Blueprint('predict', __name__)
 # POST /predict  [jwt_required]
 # ──────────────────────────────────────────────────────────────────
 @predict_bp.route('/predict', methods=['POST'])
-@jwt_required
+@firebase_required
 def predict():
     try:
         data = request.get_json()
@@ -34,6 +34,10 @@ def predict():
         # 3. Persist report to database
         failure_risk = 1 if result['health_category'] in ['Poor', 'Critical'] else 0
 
+        # Get DB user_id
+        db_user = get_or_create_user(request.user['uid'], request.user['email'])
+        user_id = db_user['id']
+
         execute_query(
             """
             INSERT INTO reports
@@ -42,7 +46,7 @@ def predict():
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
-                request.user['user_id'],
+                user_id,
                 result['engine_score'],
                 result['fuel_score'],
                 result['driving_score'],       # driving ↔ stress
@@ -80,7 +84,7 @@ def predict():
 # GET /live-metrics  [jwt_required]
 # ──────────────────────────────────────────────────────────────────
 @predict_bp.route('/live-metrics', methods=['GET'])
-@jwt_required
+@firebase_required
 def live_metrics():
     try:
         metrics = {
@@ -107,7 +111,7 @@ def live_metrics():
 # POST /predict/live  [jwt_required]  — uses live OBD data
 # ──────────────────────────────────────────────────────────────────
 @predict_bp.route('/predict/live', methods=['POST'])
-@jwt_required
+@firebase_required
 def predict_live():
     try:
         from obd_reader import get_current_data, get_status
@@ -128,6 +132,10 @@ def predict_live():
         # Persist to DB
         failure_risk = 1 if result['health_category'] in ['Poor', 'Critical'] else 0
 
+        # Get DB user_id
+        db_user = get_or_create_user(request.user['uid'], request.user['email'])
+        user_id = db_user['id']
+
         execute_query(
             """
             INSERT INTO reports
@@ -136,7 +144,7 @@ def predict_live():
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
-                request.user['user_id'],
+                user_id,
                 result['engine_score'],
                 result['fuel_score'],
                 result['driving_score'],
@@ -175,7 +183,7 @@ def predict_live():
 # Accept array of OBD rows, aggregate via median, save report
 # ──────────────────────────────────────────────────────────────────
 @predict_bp.route('/predict/batch', methods=['POST'])
-@jwt_required
+@firebase_required
 def predict_batch():
     try:
         data     = request.get_json()
@@ -235,6 +243,10 @@ def predict_batch():
         else:
             quality = "Low"
 
+        # Get DB user_id
+        db_user = get_or_create_user(request.user['uid'], request.user['email'])
+        user_id = db_user['id']
+
         # ── Persist report to DB ───────────────────────────────────
         report_row = execute_query(
             """INSERT INTO reports
@@ -244,7 +256,7 @@ def predict_batch():
                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                RETURNING id""",
             (
-                request.user['user_id'],
+                user_id,
                 engine_score,
                 fuel_score,
                 driving_score,
@@ -297,7 +309,7 @@ def predict_batch():
 # obd_reader.update_data() stores it and broadcasts via SocketIO.
 # ──────────────────────────────────────────────────────────────────
 @predict_bp.route('/obd/agent-data', methods=['POST'])
-@jwt_required
+@firebase_required
 def obd_agent_data():
     try:
         from obd_reader import update_data

@@ -3,6 +3,9 @@
    All functions are named exports for use across pages.
    ================================================================ */
 
+import { getFirebaseToken, waitForUser, auth } from './firebase.js';
+import { signOut } from './firebase.js';
+
 const IS_LOCAL =
   window.location.hostname === 'localhost' ||
   window.location.hostname === '127.0.0.1';
@@ -17,60 +20,62 @@ const SOCKET_URL = IS_LOCAL
 
 export { API_BASE, SOCKET_URL };
 
-// ── 1. getToken ────────────────────────────────────────────────────
-export function getToken() {
-  return localStorage.getItem('vexis_token');
+// ── 1. getToken ───────────────────────────────────────────────────
+// Returns a fresh Firebase ID token (async internally, but exposed
+// as a sync-compatible fallback for legacy callers that aren't async).
+export async function getToken() {
+  return await getFirebaseToken();
 }
 
-// ── 2. getUser ─────────────────────────────────────────────────────
+// ── 2. getUser ─────────────────────────────────────────────────
 export function getUser() {
   const u = localStorage.getItem('vexis_user');
   return u ? JSON.parse(u) : null;
 }
 
-// ── 3. setAuth ─────────────────────────────────────────────────────
+// ── 3. setAuth ────────────────────────────────────────────────
+// Kept for compatibility — only stores user profile now (no token)
 export function setAuth(token, user) {
-  localStorage.setItem('vexis_token', token);
   localStorage.setItem('vexis_user', JSON.stringify(user));
 }
 
-// ── 4. clearAuth ───────────────────────────────────────────────────
+// ── 4. clearAuth ──────────────────────────────────────────────
 export function clearAuth() {
-  localStorage.removeItem('vexis_token');
   localStorage.removeItem('vexis_user');
 }
 
-// ── 5. authHeaders ─────────────────────────────────────────────────
-export function authHeaders() {
+// ── 5. authHeaders ──────────────────────────────────────────────
+// Async version — fetches fresh Firebase token each request
+export async function authHeaders() {
+  const token = await getFirebaseToken();
   return {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${getToken()}`
+    'Authorization': token ? `Bearer ${token}` : ''
   };
 }
 
-// ── 6. apiGet ──────────────────────────────────────────────────────
+// ── 6. apiGet ────────────────────────────────────────────────────
 export async function apiGet(endpoint) {
   const res = await fetch(API_BASE + endpoint, {
     method: 'GET',
-    headers: authHeaders()
+    headers: await authHeaders()
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Request failed');
   return data;
 }
 
-// ── 7. apiPost ─────────────────────────────────────────────────────
+// ── 7. apiPost ───────────────────────────────────────────────────
 export async function apiPost(endpoint, body, skipAuth = false) {
   const headers = skipAuth
     ? { 'Content-Type': 'application/json' }
-    : authHeaders();
+    : await authHeaders();
   const res = await fetch(API_BASE + endpoint, {
     method: 'POST',
     headers,
     body: JSON.stringify(body)
   });
   const data = await res.json();
-  // For 403 we return the data object alongside the error so callers can inspect it
   if (!res.ok) {
     const err = new Error(data.error || 'Request failed');
     err.status = res.status;
@@ -80,26 +85,58 @@ export async function apiPost(endpoint, body, skipAuth = false) {
   return data;
 }
 
-// ── 8. checkAuth ───────────────────────────────────────────────────
-export async function checkAuth() {
-  const token = getToken();
-  if (!token) {
-    window.location.href = 'login.html';
-    return false;
+// ── 7.5 apiPut ───────────────────────────────────────────────────
+export async function apiPut(endpoint, body) {
+  const headers = await authHeaders();
+  const res = await fetch(API_BASE + endpoint, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify(body)
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const err = new Error(data.error || 'Request failed');
+    err.status = res.status;
+    err.data = data;
+    throw err;
   }
+  return data;
+}
+
+// ── 7.6 apiDelete ────────────────────────────────────────────────
+export async function apiDelete(endpoint) {
+  const headers = await authHeaders();
+  const res = await fetch(API_BASE + endpoint, {
+    method: 'DELETE',
+    headers
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const err = new Error(data.error || 'Request failed');
+    err.status = res.status;
+    err.data = data;
+    throw err;
+  }
+  return data;
+}
+
+// ── 8. checkAuth ────────────────────────────────────────────────
+export async function checkAuth() {
+  const user = await waitForUser();
+  if (!user) return false;
+  // Optionally validate token against backend
   try {
     await apiGet('/auth/me');
     return true;
   } catch {
-    clearAuth();
-    window.location.href = 'login.html';
     return false;
   }
 }
 
-// ── 9. logout ──────────────────────────────────────────────────────
-export function logout() {
+// ── 9. logout ──────────────────────────────────────────────────
+export async function logout() {
   clearAuth();
+  await signOut(auth);
   showToast('Logged out successfully', 'success');
   setTimeout(() => { window.location.href = 'login.html'; }, 800);
 }
@@ -229,29 +266,46 @@ function _connectSocket(resolve) {
 // ── 16. updateOBDStatusBanner ──────────────────────────────────────
 export function updateOBDStatusBanner(status) {
   const banner = document.getElementById('obd-banner');
-  if (!banner) return;
+  const dot = document.getElementById('obd-dot');
+  const label = document.getElementById('obd-label');
 
   if (status.connected) {
-    banner.classList.add('connected');
-    banner.classList.remove('disconnected');
-    const port = status.port || 'AUTO';
-    const simBadge = status.simulated
-      ? '<span style="opacity:.7;font-size:11px"> (Simulated)</span>'
-      : '';
-    banner.innerHTML = `
-      <span style="color:#00e676;font-size:18px">●</span>
-      <span>OBD Scanner Connected${simBadge} &mdash; Port: <b>${port}</b></span>
-      <span style="margin-left:12px;color:#00e676;font-size:12px">● Live Data Active</span>
-      <button onclick="this.parentElement.style.display='none'"
-              style="margin-left:auto;background:none;border:none;color:inherit;cursor:pointer;font-size:16px">✕</button>
-    `;
+    if (banner) {
+      banner.classList.add('connected');
+      banner.classList.remove('disconnected');
+      const port = status.port || 'AUTO';
+      const simBadge = status.simulated
+        ? '<span style="opacity:.7;font-size:11px"> (Simulated)</span>'
+        : '';
+      banner.innerHTML = `
+        <span style="color:#00e676;font-size:18px">●</span>
+        <span>OBD Scanner Connected${simBadge} &mdash; Port: <b>${port}</b></span>
+        <span style="margin-left:12px;color:#00e676;font-size:12px">● Live Data Active</span>
+        <button onclick="this.parentElement.style.display='none'"
+                style="margin-left:auto;background:none;border:none;color:inherit;cursor:pointer;font-size:16px">✕</button>
+      `;
+    }
+    if (dot) {
+      dot.className = 'obd-dot connected';
+    }
+    if (label) {
+      label.textContent = 'OBD Connected';
+    }
   } else {
-    banner.classList.add('disconnected');
-    banner.classList.remove('connected');
-    banner.innerHTML = `
-      <span style="color:#ff1744;font-size:18px">●</span>
-      <span>${status.message || 'No OBD Scanner Detected'}</span>
-    `;
+    if (banner) {
+      banner.classList.add('disconnected');
+      banner.classList.remove('connected');
+      banner.innerHTML = `
+        <span style="color:#ff1744;font-size:18px">●</span>
+        <span>${status.message || 'No OBD Scanner Detected'}</span>
+      `;
+    }
+    if (dot) {
+      dot.className = 'obd-dot disconnected';
+    }
+    if (label) {
+      label.textContent = 'OBD Disconnected';
+    }
   }
 }
 

@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify, make_response
-from utils.jwt_helper import jwt_required
+from utils.firebase_auth import firebase_required, get_or_create_user
 from database import execute_query
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
@@ -30,10 +30,12 @@ def _score_label(score):
 # GET /reports  [jwt_required]
 # ──────────────────────────────────────────────────────────────────
 @reports_bp.route('/reports', methods=['GET'])
-@jwt_required
+@firebase_required
 def get_reports():
     try:
-        user_id = request.user['user_id']
+        # Get DB user_id
+        db_user = get_or_create_user(request.user['uid'], request.user['email'])
+        user_id = db_user['id']
 
         rows = execute_query(
             """
@@ -75,10 +77,12 @@ def get_reports():
 # GET /reports/<report_id>  [jwt_required]
 # ──────────────────────────────────────────────────────────────────
 @reports_bp.route('/reports/<int:report_id>', methods=['GET'])
-@jwt_required
+@firebase_required
 def get_report(report_id):
     try:
-        user_id = request.user['user_id']
+        # Get DB user_id
+        db_user = get_or_create_user(request.user['uid'], request.user['email'])
+        user_id = db_user['id']
 
         report = execute_query(
             "SELECT * FROM reports WHERE id = %s AND user_id = %s",
@@ -122,10 +126,12 @@ def get_report(report_id):
 # GET /reports/download/<report_id>  [jwt_required]
 # ──────────────────────────────────────────────────────────────────
 @reports_bp.route('/reports/download/<int:report_id>', methods=['GET'])
-@jwt_required
+@firebase_required
 def download_report(report_id):
     try:
-        user_id = request.user['user_id']
+        # Get DB user_id
+        db_user = get_or_create_user(request.user['uid'], request.user['email'])
+        user_id = db_user['id']
 
         report = execute_query(
             "SELECT * FROM reports WHERE id = %s AND user_id = %s",

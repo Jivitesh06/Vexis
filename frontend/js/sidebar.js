@@ -4,18 +4,28 @@
    ================================================================ */
 
 import {
-  checkAuth, logout, getUser,
+  logout, getUser,
   showToast, initSocketIO,
   updateOBDStatusBanner, getOBDStatus,
   initRevealAnimations
 } from './api.js';
+import { waitForUser, syncWithBackend, auth, db, doc, onSnapshot } from './firebase.js';
 
-// ── Auth guard ─────────────────────────────────────────────────────
-const authed = await checkAuth().catch(() => false);
-if (!authed) {
+// ── Auth guard ───────────────────────────────────────────────────
+const firebaseUser = await waitForUser();
+if (!firebaseUser) {
   window.location.href = 'login.html';
   throw new Error('Not authenticated');
 }
+// Block users who haven't verified their email
+if (!firebaseUser.emailVerified) {
+  const { signOut } = await import('./firebase.js');
+  await signOut(auth).catch(() => {});
+  window.location.href = 'login.html';
+  throw new Error('Email not verified');
+}
+// Verified — ensure user exists in backend DB
+await syncWithBackend(firebaseUser).catch(() => {});
 
 // ── DOM refs ───────────────────────────────────────────────────────
 const contentArea   = document.getElementById('content-area');
@@ -25,23 +35,59 @@ const obdLabel      = document.getElementById('obd-label');
 const navItems      = document.querySelectorAll('.nav-item[data-section]');
 const mobileItems   = document.querySelectorAll('.mobile-nav-item[data-section]');
 
-// ── Populate user info ─────────────────────────────────────────────
-(function populateUser() {
-  const user = getUser();
-  if (!user) return;
+// ── Apply user data to header ─────────────────────────────────────
+function applyUserToHeader(data) {
+  const displayName = data?.name || firebaseUser.displayName || 'User';
+  const photoUrl    = data?.profile_photo_url || firebaseUser.photoURL || '';
+  const email       = data?.email || firebaseUser.email || '';
 
   const nameEl   = document.getElementById('user-name');
   const avatarEl = document.getElementById('user-avatar');
+  const emailEl  = document.getElementById('user-email');
+  const photoEl  = document.getElementById('user-photo');
 
-  if (nameEl)   nameEl.textContent   = user.name || user.email || 'User';
-  if (avatarEl) {
-    const words    = (user.name || user.email || 'VX').split(' ');
+  if (nameEl)  nameEl.textContent  = displayName;
+  if (emailEl) emailEl.textContent = email;
+
+  if (photoEl && photoUrl) {
+    photoEl.src           = photoUrl;
+    photoEl.style.display = '';
+    photoEl.style.width   = '36px';
+    photoEl.style.height  = '36px';
+    photoEl.style.borderRadius = '50%';
+    photoEl.style.objectFit = 'cover';
+    if (avatarEl) avatarEl.style.display = 'none';
+  } else if (avatarEl) {
+    if (photoEl) photoEl.style.display = 'none';
+    avatarEl.style.display = '';
+    const words    = displayName.trim().split(' ');
     const initials = words.length >= 2
-      ? words[0][0] + words[1][0]
+      ? words[0][0] + words[words.length-1][0]
       : words[0].slice(0, 2);
     avatarEl.textContent = initials.toUpperCase();
   }
-})();
+}
+
+// ── Populate user info (initial load from cache) ──────────────────
+window.populateUser = function() {
+  const cachedUser = getUser();
+  applyUserToHeader({
+    name:              cachedUser?.name || firebaseUser.displayName,
+    email:             cachedUser?.email || firebaseUser.email,
+    profile_photo_url: cachedUser?.profile_photo_url || firebaseUser.photoURL
+  });
+};
+window.populateUser();
+
+// ── Real-time Firestore listener for profile updates ──────────────
+if (firebaseUser?.uid) {
+  onSnapshot(doc(db, 'users', firebaseUser.uid), (snap) => {
+    if (snap.exists()) {
+      applyUserToHeader(snap.data());
+    }
+  });
+}
+
 
 // ── Live clock ─────────────────────────────────────────────────────
 (function startClock() {
@@ -77,15 +123,13 @@ function setActiveSection(name) {
 navItems.forEach(item => {
   item.addEventListener('click', () => {
     const section = item.dataset.section;
-    setActiveSection(section);
-    loadSection(section);
+    window.location.href = section === 'dashboard' ? 'dashboard.html' : `${section}.html`;
   });
 });
 mobileItems.forEach(item => {
   item.addEventListener('click', () => {
     const section = item.dataset.section;
-    setActiveSection(section);
-    loadSection(section);
+    window.location.href = section === 'dashboard' ? 'dashboard.html' : `${section}.html`;
   });
 });
 
@@ -233,8 +277,20 @@ async function loadDashboardContent() {
   }
 }
 
-// ── Default load ───────────────────────────────────────────────────
-loadSection('dashboard');
+// ── Routing / Default load ─────────────────────────────────────────
+function handleRoute() {
+  const path = window.location.pathname;
+  let section = 'dashboard';
+  if (path.includes('vehicles.html')) section = 'vehicles';
+  else if (path.includes('reports.html')) section = 'reports';
+  else if (path.includes('profile.html')) section = 'profile';
+  else if (path.includes('settings.html')) section = 'settings';
+  
+  setActiveSection(section);
+  loadSection(section);
+}
+
+handleRoute();
 
 // ── Expose for cross-module use ────────────────────────────────────
 window.loadSection   = loadSection;

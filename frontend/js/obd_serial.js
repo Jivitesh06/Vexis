@@ -35,6 +35,15 @@ function delay(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
+// Automatically reload page on physical hardware disconnect
+if ('serial' in navigator) {
+  navigator.serial.addEventListener('disconnect', () => {
+    if (isConnected) {
+      window.location.reload();
+    }
+  });
+}
+
 // ── FUNCTION 1 — isWebSerialSupported ─────────────────────────────
 export function isWebSerialSupported() {
   return 'serial' in navigator;
