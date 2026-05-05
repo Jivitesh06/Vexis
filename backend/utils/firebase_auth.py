@@ -89,3 +89,54 @@ def firebase_required(f):
     
     return decorated
 
+def get_or_create_user(uid, email, name=''):
+    """
+    Get or create user in PostgreSQL.
+    Links Firebase UID to local DB.
+    """
+    from database import execute_query
+    
+    # Check if user exists by firebase_uid
+    user = execute_query(
+        "SELECT * FROM users WHERE firebase_uid = %s",
+        (uid,),
+        fetchone=True
+    )
+    if user:
+        return user
+    
+    # Fallback: check if user exists by email (legacy users)
+    if email:
+        user_by_email = execute_query(
+            "SELECT * FROM users WHERE email = %s",
+            (email,),
+            fetchone=True
+        )
+        if user_by_email:
+            # Link the firebase_uid to this existing user
+            execute_query(
+                "UPDATE users SET firebase_uid = %s WHERE email = %s",
+                (uid, email),
+                commit=True
+            )
+            return execute_query(
+                "SELECT * FROM users WHERE firebase_uid = %s",
+                (uid,),
+                fetchone=True
+            )
+    
+    # Create new user
+    execute_query(
+        """INSERT INTO users 
+        (firebase_uid, email, name, created_at)
+        VALUES (%s, %s, %s, CURRENT_TIMESTAMP)""",
+        (uid, email, name),
+        commit=True
+    )
+    
+    # Return created user
+    return execute_query(
+        "SELECT * FROM users WHERE firebase_uid = %s",
+        (uid,),
+        fetchone=True
+    )
