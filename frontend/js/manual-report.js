@@ -14,7 +14,8 @@ window.loadManualReportSection = async function (container) {
 
   container.innerHTML = `
   <style>
-    .mr-grid { display:grid; grid-template-columns:1.4fr 1fr; gap:24px; align-items:start; }
+    .mr-grid { display:grid; grid-template-columns:1.4fr 1fr; gap:24px; align-items:start; width:100%; }
+    .mr-grid > div { min-width: 0; }
     @media(max-width:900px){ .mr-grid{ grid-template-columns:1fr; } }
 
     .upload-zone {
