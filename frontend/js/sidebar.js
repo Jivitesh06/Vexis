@@ -230,6 +230,9 @@ export async function loadSection(name) {
         loadPlaceholder('settings', 'Settings', 'Configure OBD scanner and preferences.', `<svg viewBox="0 0 24 24" fill="none" width="36" height="36"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.6"/></svg>`);
       }
       break;
+    case 'manual':
+      // manual-report.html is a standalone page — content already in HTML, skip
+      break;
     default:
       await loadDashboardContent();
   }
@@ -281,13 +284,17 @@ async function loadDashboardContent() {
 function handleRoute() {
   const path = window.location.pathname;
   let section = 'dashboard';
-  if (path.includes('vehicles.html')) section = 'vehicles';
-  else if (path.includes('reports.html')) section = 'reports';
-  else if (path.includes('profile.html')) section = 'profile';
-  else if (path.includes('settings.html')) section = 'settings';
-  
+  if (path.includes('vehicles.html'))           section = 'vehicles';
+  else if (path.includes('reports.html'))       section = 'reports';
+  else if (path.includes('profile.html'))       section = 'profile';
+  else if (path.includes('settings.html'))      section = 'settings';
+  else if (path.includes('manual-report.html')) section = 'manual';
+
   setActiveSection(section);
-  loadSection(section);
+  // Standalone pages (manual-report) already have content in HTML — skip JS injection
+  if (section !== 'manual') {
+    loadSection(section);
+  }
 }
 
 handleRoute();
