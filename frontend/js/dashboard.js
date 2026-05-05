@@ -1362,7 +1362,7 @@ async function loadVehiclesSection(container) {
           <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(300px, 1fr));gap:20px;">
             ${vehicles.map(v => `
               <div class="glass-card reveal" style="padding:24px;position:relative">
-                <button onclick="window.deleteVehicle(${v.id})" style="position:absolute;top:16px;right:16px;background:rgba(255,255,255,0.1);border:none;color:var(--muted);width:32px;height:32px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 0.2s" onmouseover="this.style.background='rgba(255,23,68,0.2)';this.style.color='#ff1744'" onmouseout="this.style.background='rgba(255,255,255,0.1)';this.style.color='var(--muted)'">
+                <button class="delete-vehicle-btn" data-id="${v.id}" style="position:absolute;top:16px;right:16px;background:rgba(255,255,255,0.1);border:none;color:var(--muted);width:32px;height:32px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 0.2s" onmouseover="this.style.background='rgba(255,23,68,0.2)';this.style.color='#ff1744'" onmouseout="this.style.background='rgba(255,255,255,0.1)';this.style.color='var(--muted)'">
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </button>
                 <div style="width:48px;height:48px;border-radius:12px;background:rgba(0,229,255,0.1);color:var(--accent);display:flex;align-items:center;justify-content:center;margin-bottom:16px">
@@ -1377,12 +1377,26 @@ async function loadVehiclesSection(container) {
                 <div style="background:rgba(0,0,0,0.2);padding:12px;border-radius:8px;font-size:12px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
                   <div><span style="color:var(--muted)">Plate:</span> <span style="color:var(--text-dim);font-family:monospace">${v.plate_number||'N/A'}</span></div>
                   <div><span style="color:var(--muted)">Year:</span> <span style="color:var(--text-dim)">${v.purchase_year||'N/A'}</span></div>
-                  <div><span style="color:var(--muted)">Owner:</span> <span style="color:var(--text-dim)">${v.owner_number ? v.owner_number + (v.owner_number===1?'st':v.owner_number===2?'nd':v.owner_number===3?'rd':'th') : 'N/A'}</span></div>
+                  <div><span style="color:var(--muted)">Owner:</span> <span style="color:var(--text-dim)">${v.owner_number ? v.owner_number + (v.owner_number==1?'st':v.owner_number==2?'nd':v.owner_number==3?'rd':'th') : 'N/A'}</span></div>
                 </div>
               </div>
             `).join('')}
           </div>
         `;
+        // Attach delete listeners after render (avoids inline onclick quoting issues)
+        listContainer.querySelectorAll('.delete-vehicle-btn').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const vehicleId = btn.dataset.id;
+            if (!confirm('Are you sure you want to delete this vehicle?')) return;
+            try {
+              await deleteDoc(doc(db, 'vehicles', vehicleId));
+              showToast('Vehicle deleted!', 'success');
+              fetchVehicles();
+            } catch(e) {
+              showToast('Error deleting vehicle: ' + e.message, 'error');
+            }
+          });
+        });
       }
       initRevealAnimations();
     } catch(e) {
@@ -1592,8 +1606,21 @@ async function loadProfileSection(container) {
       </div>
       
       <div class="input-group" style="margin-bottom:20px">
-        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">Profile Photo URL (Cloudinary etc.)</label>
-        <input type="text" id="profile-photo" value="${user.profile_photo_url||''}" placeholder="https://..." style="background:rgba(255,255,255,0.05);border:1px solid var(--glass-border);border-radius:var(--radius-sm);padding:12px 16px;color:var(--text);width:100%;font-family:var(--font-body);box-sizing:border-box"/>
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">Profile Photo</label>
+        <input type="hidden" id="profile-photo" value="${user.profile_photo_url||''}"/>
+        <div style="display:flex;align-items:center;gap:14px">
+          <div id="photo-preview" style="width:52px;height:52px;border-radius:50%;overflow:hidden;border:2px solid var(--glass-border);flex-shrink:0;background:rgba(0,229,255,0.1);display:flex;align-items:center;justify-content:center">
+            ${user.profile_photo_url 
+              ? `<img src="${user.profile_photo_url}" style="width:100%;height:100%;object-fit:cover"/>`
+              : `<span style="font-size:18px;color:var(--accent)">📷</span>`
+            }
+          </div>
+          <div style="flex:1">
+            <input type="file" id="photo-file-input" accept="image/*" style="display:none"/>
+            <button id="upload-photo-btn" class="btn-outline" style="width:100%;padding:10px;font-size:13px">📤 Upload Photo</button>
+            <div id="upload-status" style="font-size:11px;color:var(--muted);margin-top:6px"></div>
+          </div>
+        </div>
       </div>
 
       <button id="update-profile-btn" class="btn-primary btn-full">Update Profile</button>
@@ -1621,6 +1648,55 @@ async function loadProfileSection(container) {
     </div>
   </div>`;
   
+  // ── Cloudinary photo upload ─────────────────────────────────────
+  const CLOUDINARY_CLOUD = 'dwhzpc4gn';
+  const CLOUDINARY_PRESET = 'vexis-uploads';
+
+  const uploadPhotoBtn = container.querySelector('#upload-photo-btn');
+  const photoFileInput = container.querySelector('#photo-file-input');
+  const uploadStatus  = container.querySelector('#upload-status');
+  const photoHidden   = container.querySelector('#profile-photo');
+  const photoPreview  = container.querySelector('#photo-preview');
+
+  uploadPhotoBtn?.addEventListener('click', () => photoFileInput?.click());
+
+  photoFileInput?.addEventListener('change', async () => {
+    const file = photoFileInput.files[0];
+    if (!file) return;
+    uploadPhotoBtn.textContent = '⏳ Uploading...';
+    uploadPhotoBtn.disabled = true;
+    uploadStatus.textContent = 'Uploading to Cloudinary...';
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('upload_preset', CLOUDINARY_PRESET);
+      const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`, {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error?.message || 'Upload failed');
+      const url = data.secure_url;
+      // Store URL in hidden input
+      photoHidden.value = url;
+      // Update preview
+      photoPreview.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:cover"/>`;
+      // Immediately save to Firestore
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        await setDoc(doc(db, 'users', currentUser.uid), { profile_photo_url: url, updated_at: serverTimestamp() }, { merge: true });
+      }
+      uploadStatus.textContent = '✅ Photo uploaded!';
+      showToast('Profile photo updated!', 'success');
+    } catch(e) {
+      uploadStatus.textContent = '❌ ' + (e.message || 'Upload failed');
+      showToast('Photo upload failed: ' + e.message, 'error');
+    } finally {
+      uploadPhotoBtn.textContent = '📤 Upload Photo';
+      uploadPhotoBtn.disabled = false;
+    }
+  });
+
   // Attach event listeners after rendering
   const updateProfileBtn = container.querySelector('#update-profile-btn');
   const updatePwBtn = container.querySelector('#update-pw-btn');

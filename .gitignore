@@ -1,4 +1,7 @@
-# ── Environment & Secrets ──────────────────────────────────────────
+# ── Firebase CLI cache ────────────────────────────────────────────
+.firebase/
+
+# ── Environment & Secrets ──────────────────────────────────────────────────────
 backend/.env
 *.env
 .env.local
