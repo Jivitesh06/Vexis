@@ -1374,16 +1374,22 @@ async function loadVehiclesSection(container) {
                 </div>
                 <h3 style="font-family:var(--font-display);font-size:18px;margin-bottom:4px;color:var(--text)">${v.name}</h3>
                 <p style="color:var(--muted);font-size:13px;margin-bottom:16px">${v.model}</p>
-                <div style="background:rgba(0,0,0,0.2);padding:12px;border-radius:8px;font-size:12px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                <div style="background:rgba(0,0,0,0.2);padding:12px;border-radius:8px;font-size:12px;display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
                   <div><span style="color:var(--muted)">Plate:</span> <span style="color:var(--text-dim);font-family:monospace">${v.plate_number||'N/A'}</span></div>
                   <div><span style="color:var(--muted)">Year:</span> <span style="color:var(--text-dim)">${v.purchase_year||'N/A'}</span></div>
                   <div><span style="color:var(--muted)">Owner:</span> <span style="color:var(--text-dim)">${v.owner_number ? v.owner_number + (v.owner_number==1?'st':v.owner_number==2?'nd':v.owner_number==3?'rd':'th') : 'N/A'}</span></div>
                 </div>
+                <!-- Get Report Button -->
+                <button class="get-report-btn btn-primary" data-vid="${v.id}" data-vname="${v.name}" data-vmodel="${v.model}"
+                  style="width:100%;padding:10px;font-size:13px;display:flex;align-items:center;justify-content:center;gap:8px;border-radius:8px">
+                  <svg viewBox="0 0 24 24" fill="none" width="15" height="15"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                  Get Report
+                </button>
               </div>
             `).join('')}
           </div>
         `;
-        // Attach delete listeners after render (avoids inline onclick quoting issues)
+        // Attach delete listeners
         listContainer.querySelectorAll('.delete-vehicle-btn').forEach(btn => {
           btn.addEventListener('click', async () => {
             const vehicleId = btn.dataset.id;
@@ -1395,6 +1401,16 @@ async function loadVehiclesSection(container) {
             } catch(e) {
               showToast('Error deleting vehicle: ' + e.message, 'error');
             }
+          });
+        });
+        // Attach Get Report listeners
+        listContainer.querySelectorAll('.get-report-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            openVehicleReportModal({
+              id:    btn.dataset.vid,
+              name:  btn.dataset.vname,
+              model: btn.dataset.vmodel
+            });
           });
         });
       }
@@ -1475,7 +1491,7 @@ async function loadReportsSection(container) {
   <div class="section-header">
     <div>
       <h1 class="section-title">Past Reports</h1>
-      <p class="section-subtitle">All historical vehicle scan reports</p>
+      <p class="section-subtitle">All vehicle health reports linked to your account</p>
     </div>
   </div>
   <div id="reports-body">
@@ -1494,43 +1510,53 @@ async function loadReportsSection(container) {
     const currentUser = auth.currentUser;
     if (!currentUser) throw new Error('Not authenticated');
 
-    const q = query(collection(db, 'reports'), where('userId', '==', currentUser.uid));
-    const snap = await getDocs(q);
-    let reports = [];
-    snap.forEach(d => reports.push({ id: d.id, ...d.data() }));
-    reports.sort((a, b) => {
-      const t1 = a.created_at ? a.created_at.toMillis() : 0;
-      const t2 = b.created_at ? b.created_at.toMillis() : 0;
-      return t2 - t1;
+    // Read from backend DB (not Firestore — reports are stored in PostgreSQL)
+    const token = await currentUser.getIdToken();
+    const res = await fetch(`${API_BASE}/reports`, {
+      headers: { 'Authorization': `Bearer ${token}` }
     });
+    if (!res.ok) throw new Error('Failed to load reports');
+    const data = await res.json();
+    const reports = data.reports || [];
 
     const body = document.getElementById('reports-body');
     if (!body) return;
     if (reports.length === 0) {
       body.innerHTML = `<div class="placeholder-section reveal">
         <p class="placeholder-title">No Reports Yet</p>
-        <p class="placeholder-sub">Run your first vehicle scan to generate a report.</p>
+        <p class="placeholder-sub">Run a vehicle scan or upload a CSV to generate your first report.</p>
       </div>`;
     } else {
+      const srcLabel = s => s === 'csv_upload' ? '📄 CSV' : '🔌 OBD Live';
       body.innerHTML = `
       <div class="glass-card" style="overflow:auto">
         <table style="width:100%;border-collapse:collapse;font-family:var(--font-body);font-size:13px">
           <thead>
             <tr style="border-bottom:1px solid var(--glass-border)">
-              ${['Date','Score','Status','Engine','Fuel'].map(h=>`
-                <th style="padding:14px 16px;text-align:left;color:var(--muted);font-weight:600;letter-spacing:1px;font-size:11px;text-transform:uppercase">${h}</th>`).join('')}
+              ${['Date','Vehicle','Source','Score','Status','Engine','Fuel','Download'].map(h=>`
+                <th style="padding:12px 14px;text-align:left;color:var(--muted);font-weight:600;letter-spacing:1px;font-size:11px;text-transform:uppercase;white-space:nowrap">${h}</th>`).join('')}
             </tr>
           </thead>
           <tbody>
             ${reports.map(r => {
-              const ts = r.created_at ? new Date(r.created_at.toMillis()).toLocaleDateString() : 'N/A';
+              const ts  = r.timestamp ? new Date(r.timestamp).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : 'N/A';
+              const veh = r.vehicle_name ? `${r.vehicle_name}${r.vehicle_model?' — '+r.vehicle_model:''}` : '—';
+              const sc  = Math.round(r.overall_score || 0);
+              const st  = r.status_label || scoreLabel(sc);
               return `
             <tr style="border-bottom:1px solid rgba(255,255,255,0.04);transition:background 0.2s" onmouseenter="this.style.background='rgba(0,229,255,0.03)'" onmouseleave="this.style.background=''">
-              <td style="padding:14px 16px;color:var(--text-dim)">${ts}</td>
-              <td style="padding:14px 16px"><span style="font-family:var(--font-display);color:${scoreColor(r.overall_score||0)};font-weight:700">${Math.round(r.overall_score||0)}</span></td>
-              <td style="padding:14px 16px"><span class="badge ${getBadgeClass(r.category||scoreLabel(r.overall_score||0))}">${r.category||scoreLabel(r.overall_score||0)}</span></td>
-              <td style="padding:14px 16px;color:${scoreColor(r.engine_score||0)}">${Math.round(r.engine_score||0)}</td>
-              <td style="padding:14px 16px;color:${scoreColor(r.fuel_score||0)}">${Math.round(r.fuel_score||0)}</td>
+              <td style="padding:12px 14px;color:var(--text-dim);white-space:nowrap">${ts}</td>
+              <td style="padding:12px 14px;color:var(--text);font-size:12px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${veh}">${veh}</td>
+              <td style="padding:12px 14px;font-size:11px;color:var(--muted)">${srcLabel(r.source)}</td>
+              <td style="padding:12px 14px"><span style="font-family:var(--font-display);color:${scoreColor(sc)};font-weight:700">${sc}</span></td>
+              <td style="padding:12px 14px"><span class="badge ${getBadgeClass(st)}">${st}</span></td>
+              <td style="padding:12px 14px;color:${scoreColor(r.engine_score||0)}">${Math.round(r.engine_score||0)}</td>
+              <td style="padding:12px 14px;color:${scoreColor(r.fuel_score||0)}">${Math.round(r.fuel_score||0)}</td>
+              <td style="padding:12px 14px">
+                <button onclick="window.open('${API_BASE}/reports/download/${r.id}')" style="background:rgba(0,229,255,0.1);border:1px solid rgba(0,229,255,0.2);color:var(--accent);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;transition:all .2s" onmouseover="this.style.background='rgba(0,229,255,0.2)'" onmouseout="this.style.background='rgba(0,229,255,0.1)'">
+                  ⬇ PDF
+                </button>
+              </td>
             </tr>`;
             }).join('')}
           </tbody>
@@ -1883,3 +1909,241 @@ window.loadVehiclesSection  = loadVehiclesSection;
 window.loadReportsSection   = loadReportsSection;
 window.loadProfileSection   = loadProfileSection;
 window.loadSettingsSection  = loadSettingsSection;
+
+// ──────────────────────────────────────────────────────────────────
+// Vehicle Report Modal — OBD Connect + Data Collect + Report
+// ──────────────────────────────────────────────────────────────────
+function openVehicleReportModal(vehicle) {
+  // Remove existing modal if any
+  document.getElementById('veh-report-modal')?.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'veh-report-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);backdrop-filter:blur(8px);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+
+  modal.innerHTML = `
+  <div style="background:linear-gradient(135deg,rgba(10,15,30,0.98),rgba(5,10,20,0.98));border:1px solid rgba(0,229,255,0.2);border-radius:20px;width:100%;max-width:540px;padding:32px;position:relative;box-shadow:0 0 60px rgba(0,229,255,0.08)">
+
+    <!-- Close -->
+    <button id="vr-close" style="position:absolute;top:16px;right:16px;background:rgba(255,255,255,0.08);border:none;color:#aaa;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:18px;line-height:1;display:flex;align-items:center;justify-content:center">✕</button>
+
+    <!-- Vehicle Header -->
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:24px">
+      <div style="width:48px;height:48px;border-radius:12px;background:rgba(0,229,255,0.12);color:#00e5ff;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <svg viewBox="0 0 24 24" fill="none" width="26" height="26"><path d="M5 17H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h14l4 4v4a2 2 0 0 1-2 2h-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="7.5" cy="17.5" r="2.5" stroke="currentColor" stroke-width="1.8"/><circle cx="17.5" cy="17.5" r="2.5" stroke="currentColor" stroke-width="1.8"/></svg>
+      </div>
+      <div>
+        <div style="font-family:var(--font-display,Orbitron);font-size:18px;font-weight:700;color:#e2e8f0">${vehicle.name}</div>
+        <div style="font-size:13px;color:#64748b">${vehicle.model}</div>
+      </div>
+    </div>
+
+    <!-- OBD Status Chip -->
+    <div id="vr-obd-status" style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;margin-bottom:20px">
+      <span id="vr-obd-dot" style="width:10px;height:10px;border-radius:50%;background:#ef4444;flex-shrink:0"></span>
+      <span id="vr-obd-txt" style="font-size:13px;color:#94a3b8">OBD Disconnected — Connect your scanner to begin</span>
+    </div>
+
+    <!-- Duration Selector -->
+    <div style="margin-bottom:20px">
+      <div style="font-size:12px;color:#64748b;margin-bottom:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase">Data Collection Duration</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+        ${[1,2,3].map(m=>`
+        <label style="cursor:pointer">
+          <input type="radio" name="vr-dur" value="${m*60}" ${m===2?'checked':''} style="display:none">
+          <div class="vr-dur-card" style="padding:14px;border-radius:10px;border:1px solid rgba(255,255,255,0.1);text-align:center;transition:all .2s;background:rgba(255,255,255,0.03);user-select:none">
+            <div style="font-family:var(--font-display,Orbitron);font-size:20px;font-weight:700;color:#00e5ff">${m}</div>
+            <div style="font-size:11px;color:#64748b">minute${m>1?'s':''}</div>
+          </div>
+        </label>`).join('')}
+      </div>
+    </div>
+
+    <!-- Progress / Timer -->
+    <div id="vr-progress-area" style="display:none;margin-bottom:20px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+        <span style="font-size:12px;color:#64748b">Collecting OBD data…</span>
+        <span id="vr-timer" style="font-family:monospace;font-size:13px;color:#00e5ff;font-weight:700">0:00</span>
+      </div>
+      <div style="background:rgba(255,255,255,0.06);border-radius:999px;height:6px;overflow:hidden">
+        <div id="vr-prog-fill" style="height:100%;background:linear-gradient(90deg,#00e5ff,#0ea5e9);border-radius:999px;width:0%;transition:width .5s ease"></div>
+      </div>
+      <div id="vr-live-badge" style="display:inline-flex;align-items:center;gap:6px;margin-top:10px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600;color:#ef4444">
+        ● LIVE — Reading OBD data
+      </div>
+    </div>
+
+    <!-- Status Message -->
+    <div id="vr-status" style="display:none;padding:14px 18px;border-radius:10px;margin-bottom:16px;font-size:13px"></div>
+
+    <!-- Action Buttons -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <button id="vr-connect-btn" style="padding:14px;border-radius:10px;background:rgba(0,229,255,0.1);border:1px solid rgba(0,229,255,0.25);color:#00e5ff;cursor:pointer;font-size:13px;font-weight:600;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px"
+        onmouseover="this.style.background='rgba(0,229,255,0.2)'" onmouseout="this.style.background='rgba(0,229,255,0.1)'">
+        🔌 Connect OBD
+      </button>
+      <button id="vr-generate-btn" style="padding:14px;border-radius:10px;background:linear-gradient(135deg,#00e5ff,#0ea5e9);border:none;color:#000;cursor:pointer;font-size:13px;font-weight:700;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px" disabled
+        onmouseover="if(!this.disabled)this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='none'">
+        🔬 Generate Report
+      </button>
+    </div>
+  </div>`;
+
+  document.body.appendChild(modal);
+
+  // ── Duration card highlight ───────────────────────────────────────
+  function highlightDuration() {
+    modal.querySelectorAll('input[name="vr-dur"]').forEach(radio => {
+      const card = radio.nextElementSibling;
+      card.style.borderColor  = radio.checked ? '#00e5ff' : 'rgba(255,255,255,0.1)';
+      card.style.background   = radio.checked ? 'rgba(0,229,255,0.1)' : 'rgba(255,255,255,0.03)';
+    });
+  }
+  highlightDuration();
+  modal.querySelectorAll('input[name="vr-dur"]').forEach(r => r.addEventListener('change', highlightDuration));
+
+  // ── State ──────────────────────────────────────────────────────────
+  let obdConnected = false;
+  let collecting   = false;
+  let obdRows      = [];
+  let timerInterval, startTime;
+
+  const connectBtn  = modal.querySelector('#vr-connect-btn');
+  const generateBtn = modal.querySelector('#vr-generate-btn');
+  const statusEl    = modal.querySelector('#vr-status');
+  const obdDot      = modal.querySelector('#vr-obd-dot');
+  const obdTxt      = modal.querySelector('#vr-obd-txt');
+  const progArea    = modal.querySelector('#vr-progress-area');
+  const progFill    = modal.querySelector('#vr-prog-fill');
+  const timerEl     = modal.querySelector('#vr-timer');
+
+  function setStatus(type, msg) {
+    const bg = type==='success'?'rgba(34,197,94,.1)':type==='error'?'rgba(239,68,68,.1)':'rgba(0,229,255,.08)';
+    const bc = type==='success'?'rgba(34,197,94,.3)':type==='error'?'rgba(239,68,68,.3)':'rgba(0,229,255,.2)';
+    statusEl.style.cssText = `display:block;padding:14px 18px;border-radius:10px;margin-bottom:16px;font-size:13px;background:${bg};border:1px solid ${bc};color:${type==='error'?'#fca5a5':'#e2e8f0'}`;
+    statusEl.textContent = msg;
+  }
+
+  // ── OBD Connect ────────────────────────────────────────────────────
+  connectBtn.addEventListener('click', async () => {
+    if (obdConnected) return;
+    connectBtn.textContent = '⏳ Connecting…';
+    connectBtn.disabled = true;
+    try {
+      await connectOBDSerial();
+      obdConnected = true;
+      obdDot.style.background = '#22c55e';
+      obdTxt.textContent      = 'OBD Connected — Ready to collect data';
+      obdTxt.style.color      = '#86efac';
+      connectBtn.textContent  = '✅ OBD Connected';
+      generateBtn.disabled    = false;
+      setStatus('info', '✅ OBD connected! Select duration and click Generate Report.');
+    } catch(e) {
+      connectBtn.textContent  = '🔌 Connect OBD';
+      connectBtn.disabled     = false;
+      setStatus('error', 'Connection failed: ' + (e.message||'Check your OBD adapter'));
+    }
+  });
+
+  // ── Generate Report ────────────────────────────────────────────────
+  generateBtn.addEventListener('click', async () => {
+    if (!obdConnected) { setStatus('error', 'Please connect OBD first'); return; }
+    const durationSec = parseInt(modal.querySelector('input[name="vr-dur"]:checked').value);
+
+    generateBtn.disabled = true;
+    connectBtn.disabled  = true;
+    progArea.style.display = 'block';
+    obdRows = [];
+    collecting = true;
+
+    setStatus('info', `⏳ Collecting ${durationSec/60} minute(s) of OBD data…`);
+
+    // Start OBD live stream and collect rows
+    startTime = Date.now();
+    window.onOBDData = (data) => {
+      if (collecting) obdRows.push(data);
+    };
+
+    // Timer display
+    timerInterval = setInterval(() => {
+      const elapsed = (Date.now() - startTime) / 1000;
+      const pct = Math.min(100, (elapsed / durationSec) * 100);
+      progFill.style.width = pct + '%';
+      const m = Math.floor(elapsed/60), s = Math.floor(elapsed%60);
+      timerEl.textContent = `${m}:${String(s).padStart(2,'0')}`;
+    }, 500);
+
+    await startLiveStream();
+
+    // Wait for duration
+    await new Promise(r => setTimeout(r, durationSec * 1000));
+
+    collecting = false;
+    clearInterval(timerInterval);
+    progFill.style.width = '100%';
+
+    setStatus('info', `📊 Analysing ${obdRows.length} OBD readings via ML…`);
+
+    try {
+      const user  = auth.currentUser;
+      const token = await user.getIdToken(true);
+
+      const res = await fetch(`${API_BASE}/predict/batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          rows:           obdRows,
+          duration_seconds: durationSec,
+          vehicle_id:     vehicle.id,
+          vehicle_name:   vehicle.name,
+          vehicle_model:  vehicle.model
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Analysis failed');
+      }
+
+      const result = await res.json();
+
+      // Download PDF
+      if (result.report_id) {
+        const pdfRes = await fetch(`${API_BASE}/reports/download/${result.report_id}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (pdfRes.ok) {
+          const blob = await pdfRes.blob();
+          const url  = URL.createObjectURL(blob);
+          const a    = document.createElement('a');
+          a.href = url; a.download = `vexis_${vehicle.name.replace(/\s/g,'_')}_report.pdf`;
+          document.body.appendChild(a); a.click();
+          document.body.removeChild(a); URL.revokeObjectURL(url);
+        }
+      }
+
+      setStatus('success', `✅ Report generated! Score: ${Math.round(result.overall_score)}/100 (${result.health_category}). PDF downloading…`);
+      showToast(`Report for ${vehicle.name} saved to Past Reports!`, 'success');
+
+      generateBtn.textContent = '✅ Done — View Past Reports';
+      generateBtn.disabled    = false;
+      generateBtn.onclick     = () => { modal.remove(); window.loadSection?.('reports'); };
+
+    } catch(e) {
+      setStatus('error', 'Analysis failed: ' + e.message);
+      generateBtn.disabled = false;
+      generateBtn.textContent = '🔬 Try Again';
+    }
+  });
+
+  // ── Close ──────────────────────────────────────────────────────────
+  modal.querySelector('#vr-close').addEventListener('click', () => {
+    collecting = false;
+    clearInterval(timerInterval);
+    modal.remove();
+  });
+  modal.addEventListener('click', e => {
+    if (e.target === modal) { collecting = false; clearInterval(timerInterval); modal.remove(); }
+  });
+}
+

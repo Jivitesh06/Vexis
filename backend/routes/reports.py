@@ -40,7 +40,7 @@ def get_reports():
         rows = execute_query(
             """
             SELECT id, timestamp, overall_score, status_label,
-                   engine_score, fuel_score, stress_score, failure_risk
+                   engine_score, fuel_score, stress_score, failure_risk, raw_input
             FROM reports
             WHERE user_id = %s
             ORDER BY timestamp DESC
@@ -51,6 +51,11 @@ def get_reports():
 
         reports = []
         for row in (rows or []):
+            raw = {}
+            try:
+                raw = json.loads(row['raw_input']) if row['raw_input'] else {}
+            except Exception:
+                pass
             reports.append({
                 "id":            row['id'],
                 "timestamp":     str(row['timestamp']),
@@ -59,7 +64,10 @@ def get_reports():
                 "engine_score":  row['engine_score'],
                 "fuel_score":    row['fuel_score'],
                 "stress_score":  row['stress_score'],
-                "failure_risk":  row['failure_risk']
+                "failure_risk":  row['failure_risk'],
+                "vehicle_name":  raw.get('vehicle_name'),
+                "vehicle_model": raw.get('vehicle_model'),
+                "source":        raw.get('source', 'live_obd'),
             })
 
         return jsonify({

@@ -186,9 +186,12 @@ def predict_live():
 @firebase_required
 def predict_batch():
     try:
-        data     = request.get_json()
-        rows     = data.get('rows', [])
-        duration = data.get('duration_seconds', 120)
+        data        = request.get_json()
+        rows        = data.get('rows', [])
+        duration    = data.get('duration_seconds', 120)
+        vehicle_id  = data.get('vehicle_id', None)   # Firestore vehicle doc ID
+        vehicle_name= data.get('vehicle_name', None) # display name
+        vehicle_model=data.get('vehicle_model', None)
 
         if len(rows) < 5:
             return jsonify({
@@ -264,9 +267,13 @@ def predict_batch():
                 failure_risk,
                 status_label,
                 json.dumps({
-                    "batch":    True,
-                    "rows":     len(rows),
-                    "duration": duration
+                    "batch":        True,
+                    "rows":         len(rows),
+                    "duration":     duration,
+                    "vehicle_id":   vehicle_id,
+                    "vehicle_name": vehicle_name,
+                    "vehicle_model":vehicle_model,
+                    "source":       "live_obd"
                 }),
                 json.dumps(persistent_issues)
             ),
@@ -423,6 +430,24 @@ def predict_csv():
 
         quality = "High" if len(results) >= 30 else "Medium" if len(results) >= 15 else "Low"
 
+        # ── Save report to DB ─────────────────────────────────────
+        db_user = get_or_create_user(request.user['uid'], request.user['email'])
+        report_row = execute_query(
+            """INSERT INTO reports
+               (user_id, engine_score, fuel_score, stress_score,
+                overall_score, failure_risk, status_label, raw_input, issues)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+               RETURNING id""",
+            (
+                db_user['id'], engine_score, fuel_score, driving_score,
+                overall_score, 1 if failure_risk else 0, status_label,
+                json.dumps({"source": "csv_upload", "rows": len(results), "quality": quality}),
+                json.dumps(persist_issues)
+            ),
+            fetchone=True, commit=True
+        )
+        report_id = report_row['id'] if report_row else None
+
         # ── Helper ────────────────────────────────────────────────
         def score_label(s):
             if s >= 90: return ("Excellent", colors.HexColor("#22c55e"))
@@ -569,6 +594,9 @@ def predict_csv():
         response = make_response(pdf_bytes)
         response.headers['Content-Type']        = 'application/pdf'
         response.headers['Content-Disposition'] = 'attachment; filename=vexis_manual_report.pdf'
+        response.headers['Access-Control-Expose-Headers'] = 'X-Report-Id'
+        if report_id:
+            response.headers['X-Report-Id'] = str(report_id)
         return response
 
     except Exception as e:
