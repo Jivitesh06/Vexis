@@ -233,6 +233,8 @@ export async function loadSection(name) {
     case 'manual':
       if (typeof window.loadManualReportSection === 'function') {
         await window.loadManualReportSection(contentArea);
+      } else {
+        loadPlaceholder('manual', 'Manual Report', 'Upload OBD data for manual analysis.', `<svg viewBox="0 0 24 24" fill="none" width="36" height="36"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><polyline points="17 8 12 3 7 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="12" y1="3" x2="12" y2="15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`);
       }
       break;
     default:
