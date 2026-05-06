@@ -120,16 +120,23 @@ function setActiveSection(name) {
   mobileItems.forEach(el => el.classList.toggle('active', el.dataset.section === name));
 }
 
+// section name → filename mapping (add overrides here)
+const SECTION_FILE = {
+  'dashboard':   'dashboard.html',
+  'manual':      'manual-report.html',
+};
+function sectionToUrl(section) {
+  return SECTION_FILE[section] || `${section}.html`;
+}
+
 navItems.forEach(item => {
   item.addEventListener('click', () => {
-    const section = item.dataset.section;
-    window.location.href = section === 'dashboard' ? 'dashboard.html' : `${section}.html`;
+    window.location.href = sectionToUrl(item.dataset.section);
   });
 });
 mobileItems.forEach(item => {
   item.addEventListener('click', () => {
-    const section = item.dataset.section;
-    window.location.href = section === 'dashboard' ? 'dashboard.html' : `${section}.html`;
+    window.location.href = sectionToUrl(item.dataset.section);
   });
 });
 
