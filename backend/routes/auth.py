@@ -14,42 +14,51 @@ init_firebase()
 
 @auth_bp.route('/verify-token', methods=['POST'])
 def verify_token():
-    """
-    Frontend sends Firebase ID token.
-    Backend verifies and creates/returns user.
-    """
-    data = request.get_json()
-    token = data.get('token')
-    
-    if not token:
-        return jsonify({
-            "error": "Token required"
-        }), 400
-    
-    user = verify_firebase_token(token)
-    
-    if not user:
-        return jsonify({
-            "error": "Invalid token"
-        }), 401
-    
-    # Get or create in PostgreSQL
-    db_user = get_or_create_user(
-        user['uid'],
-        user['email'],
-        user['name']
-    )
-    
-    return jsonify({
-        "success": True,
-        "user": {
-            "id": db_user['id'],
-            "uid": user['uid'],
-            "email": user['email'],
-            "name": user['name'],
-            "email_verified": user['email_verified']
-        }
-    }), 200
+    try:
+        data = request.get_json() or {}
+        token = data.get('token')
+        
+        if not token:
+            return jsonify({"error": "Token required"}), 400
+        
+        user = verify_firebase_token(token)
+        if not user:
+            return jsonify({"error": "Invalid token"}), 401
+        
+        # Try to get/create in PostgreSQL — DB may be unavailable
+        try:
+            db_user = get_or_create_user(user['uid'], user['email'], user['name'])
+        except Exception as db_err:
+            print(f"[WARN] DB unavailable in verify-token: {db_err}")
+            db_user = None
+
+        if db_user:
+            return jsonify({
+                "success": True,
+                "user": {
+                    "id":             db_user['id'],
+                    "uid":            user['uid'],
+                    "email":          user['email'],
+                    "name":           user['name'],
+                    "email_verified": user['email_verified']
+                }
+            }), 200
+        else:
+            # DB down — still acknowledge valid Firebase token
+            return jsonify({
+                "success": True,
+                "user": {
+                    "id":             None,
+                    "uid":            user['uid'],
+                    "email":          user['email'],
+                    "name":           user['name'],
+                    "email_verified": user['email_verified']
+                }
+            }), 200
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 @auth_bp.route('/me', methods=['GET'])
 @firebase_required

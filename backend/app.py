@@ -38,30 +38,30 @@ CORS(app,
 
 @app.after_request
 def _add_cors(response):
-    """Ensure CORS headers are on EVERY response, including 4xx/5xx."""
+    """Ensure CORS headers on EVERY response (200, 4xx, 5xx, OPTIONS)."""
     origin = request.headers.get('Origin', '')
-    allowed = Config.CORS_ORIGINS
-    if origin in allowed or '*' in allowed:
+    if origin:
         response.headers['Access-Control-Allow-Origin']      = origin
         response.headers['Access-Control-Allow-Credentials'] = 'true'
-        response.headers['Access-Control-Allow-Headers']     = 'Content-Type, Authorization'
-        response.headers['Access-Control-Allow-Methods']     = 'GET, POST, PUT, DELETE, OPTIONS'
-        response.headers['Access-Control-Expose-Headers']    = 'X-Report-Id'
+    else:
+        response.headers['Access-Control-Allow-Origin']      = '*'
+    response.headers['Access-Control-Allow-Headers']  = 'Content-Type, Authorization'
+    response.headers['Access-Control-Allow-Methods']  = 'GET, POST, PUT, DELETE, OPTIONS'
+    response.headers['Access-Control-Expose-Headers'] = 'X-Report-Id'
     return response
 
 @app.before_request
 def _handle_options():
-    """Immediately return 200 for CORS preflight OPTIONS requests."""
+    """Return 200 immediately for all CORS preflight OPTIONS requests."""
     if request.method == 'OPTIONS':
         from flask import make_response
         resp = make_response('', 200)
-        origin = request.headers.get('Origin', '')
-        if origin in Config.CORS_ORIGINS:
-            resp.headers['Access-Control-Allow-Origin']      = origin
-            resp.headers['Access-Control-Allow-Credentials'] = 'true'
-            resp.headers['Access-Control-Allow-Headers']     = 'Content-Type, Authorization'
-            resp.headers['Access-Control-Allow-Methods']     = 'GET, POST, PUT, DELETE, OPTIONS'
-            resp.headers['Access-Control-Max-Age']           = '86400'
+        origin = request.headers.get('Origin', '*')
+        resp.headers['Access-Control-Allow-Origin']      = origin
+        resp.headers['Access-Control-Allow-Credentials'] = 'true'
+        resp.headers['Access-Control-Allow-Headers']     = 'Content-Type, Authorization'
+        resp.headers['Access-Control-Allow-Methods']     = 'GET, POST, PUT, DELETE, OPTIONS'
+        resp.headers['Access-Control-Max-Age']           = '86400'
         return resp
 
 socketio = SocketIO(

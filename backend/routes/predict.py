@@ -430,23 +430,28 @@ def predict_csv():
 
         quality = "High" if len(results) >= 30 else "Medium" if len(results) >= 15 else "Low"
 
-        # ── Save report to DB ─────────────────────────────────────
-        db_user = get_or_create_user(request.user['uid'], request.user['email'])
-        report_row = execute_query(
-            """INSERT INTO reports
-               (user_id, engine_score, fuel_score, stress_score,
-                overall_score, failure_risk, status_label, raw_input, issues)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-               RETURNING id""",
-            (
-                db_user['id'], engine_score, fuel_score, driving_score,
-                overall_score, 1 if failure_risk else 0, status_label,
-                json.dumps({"source": "csv_upload", "rows": len(results), "quality": quality}),
-                json.dumps(persist_issues)
-            ),
-            fetchone=True, commit=True
-        )
-        report_id = report_row['id'] if report_row else None
+        # ── Save report to DB (best-effort — PDF still returns if DB is down) ──
+        report_id = None
+        try:
+            db_user = get_or_create_user(request.user['uid'], request.user['email'])
+            if db_user:
+                report_row = execute_query(
+                    """INSERT INTO reports
+                       (user_id, engine_score, fuel_score, stress_score,
+                        overall_score, failure_risk, status_label, raw_input, issues)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                       RETURNING id""",
+                    (
+                        db_user['id'], engine_score, fuel_score, driving_score,
+                        overall_score, 1 if failure_risk else 0, status_label,
+                        json.dumps({"source": "csv_upload", "rows": len(results), "quality": quality}),
+                        json.dumps(persist_issues)
+                    ),
+                    fetchone=True, commit=True
+                )
+                report_id = report_row['id'] if report_row else None
+        except Exception as db_err:
+            print(f"[WARN] predict_csv: DB save failed (PDF still returning): {db_err}")
 
         # ── Helper ────────────────────────────────────────────────
         def score_label(s):
