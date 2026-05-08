@@ -1,11 +1,13 @@
 import psycopg2
 import psycopg2.extras
+import time
 from config import Config
 
 
 # ──────────────────────────────────────────────
 # FUNCTION 1 — get_db()
 # Returns a new psycopg2 connection using Config
+# Includes TCP keepalive to prevent SSL drops
 # ──────────────────────────────────────────────
 def get_db():
     ssl_mode = 'require' if Config.DB_HOST != 'localhost' else 'prefer'
@@ -16,10 +18,14 @@ def get_db():
         user=Config.DB_USER,
         password=Config.DB_PASSWORD,
         sslmode=ssl_mode,
-        connect_timeout=15
+        connect_timeout=20,
+        # TCP keepalive — prevents SSL drop on idle connections
+        keepalives=1,
+        keepalives_idle=30,
+        keepalives_interval=10,
+        keepalives_count=5,
     )
-    conn.cursor_factory = \
-        psycopg2.extras.RealDictCursor
+    conn.cursor_factory = psycopg2.extras.RealDictCursor
     return conn
 
 
@@ -71,8 +77,7 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
-        
-        # Migrate vehicles table — add columns if they don't exist
+
         cursor.execute("""
             ALTER TABLE vehicles
                 ADD COLUMN IF NOT EXISTS plate_number VARCHAR(50),
@@ -104,6 +109,7 @@ def init_db():
 
     except Exception as e:
         print(f"Error during init_db: {e}")
+        raise   # let app.py know init failed
 
     finally:
         if cursor:
@@ -114,40 +120,61 @@ def init_db():
 
 # ──────────────────────────────────────────────
 # FUNCTION 3 — execute_query()
-# General-purpose safe query executor
+# Retries up to 3 times on SSL/connection errors
+# (handles Neon / Render PostgreSQL cold-starts)
 # ──────────────────────────────────────────────
 def execute_query(query, params=(), fetchone=False, fetchall=False, commit=False):
-    conn = None
-    cursor = None
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
+    MAX_RETRIES = 3
+    last_error  = None
 
-        # Always use parameterized queries — never string formatting
-        cursor.execute(query, params)
+    for attempt in range(1, MAX_RETRIES + 1):
+        conn   = None
+        cursor = None
+        try:
+            conn   = get_db()
+            cursor = conn.cursor()
+            cursor.execute(query, params)
 
-        if commit:
-            conn.commit()
+            if commit:
+                conn.commit()
 
-        if fetchone:
-            row = cursor.fetchone()
-            return dict(row) if row else None
+            if fetchone:
+                row = cursor.fetchone()
+                return dict(row) if row else None
 
-        if fetchall:
-            rows = cursor.fetchall()
-            return [dict(row) for row in rows]
+            if fetchall:
+                rows = cursor.fetchall()
+                return [dict(row) for row in rows]
 
-        return None
+            return None
 
-    except psycopg2.Error as e:
-        print(f"Database error in execute_query: {e}")
-        raise
+        except psycopg2.OperationalError as e:
+            last_error = e
+            err_str = str(e).lower()
+            # SSL drop / connection reset — worth retrying
+            if any(k in err_str for k in ('ssl', 'connection', 'closed', 'reset', 'timeout')):
+                print(f"[DB] Attempt {attempt}/{MAX_RETRIES} failed (SSL/conn): {e}")
+                if attempt < MAX_RETRIES:
+                    time.sleep(attempt * 1.5)   # 1.5s, 3s backoff
+                    continue
+            raise   # non-retriable operational error
 
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
+        except psycopg2.Error as e:
+            # Non-retriable DB error (syntax, constraint, etc.)
+            print(f"Database error in execute_query: {e}")
+            raise
+
+        finally:
+            if cursor:
+                try: cursor.close()
+                except Exception: pass
+            if conn:
+                try: conn.close()
+                except Exception: pass
+
+    # All retries exhausted
+    print(f"[DB] All {MAX_RETRIES} retries failed: {last_error}")
+    raise last_error
 
 
 # ──────────────────────────────────────────────
@@ -156,7 +183,7 @@ def execute_query(query, params=(), fetchone=False, fetchall=False, commit=False
 def test_connection():
     try:
         conn = get_db()
-        cur = conn.cursor()
+        cur  = conn.cursor()
         cur.execute("SELECT version();")
         result = cur.fetchone()
         print(f"DB Connected: {result}")
