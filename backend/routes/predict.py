@@ -405,7 +405,7 @@ def predict_csv():
                 'gradient_speed_stress':  round((rpm / 1000) * (speed / 100), 2),
             }
 
-        # ── Run ML on each row (in thread pool to avoid blocking eventlet) ──
+        # ── Run ML in a real OS thread so eventlet event loop stays alive ──
         def _run_ml(rows_to_process):
             _results = []
             for _row in rows_to_process:
@@ -415,14 +415,13 @@ def predict_csv():
                     _results.append(result)
             return _results
 
-        try:
-            import eventlet
-            results = eventlet.tpool.execute(_run_ml, rows)
-        except ImportError:
-            results = _run_ml(rows)
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            results = pool.submit(_run_ml, rows).result(timeout=240)
 
         if len(results) < 3:
             return jsonify({"error": "Too many prediction errors. Check CSV data quality."}), 500
+
 
 
         # ── Aggregate (median) ────────────────────────────────────
