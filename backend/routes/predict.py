@@ -506,11 +506,12 @@ def predict_csv():
         GEN_DATE = datetime.now().strftime("%d %b %Y, %H:%M")
 
         def score_info(s):
-            if s >= 90: return ("EXCELLENT", GREEN)
-            if s >= 75: return ("GOOD",      LIME)
-            if s >= 60: return ("FAIR",      AMBER)
-            if s >= 40: return ("POOR",      ORANGE)
-            return              ("CRITICAL",  RED)
+            """Returns (label, HexColor, css_hex_string)."""
+            if s >= 90: return ("EXCELLENT", GREEN,  "#22c55e")
+            if s >= 75: return ("GOOD",      LIME,   "#84cc16")
+            if s >= 60: return ("FAIR",      AMBER,  "#f59e0b")
+            if s >= 40: return ("POOR",      ORANGE, "#f97316")
+            return              ("CRITICAL",  RED,    "#ef4444")
 
         # ── Custom Flowables ──────────────────────────────
         class ScoreBar(Flowable):
@@ -650,7 +651,7 @@ def predict_csv():
         story = []
 
         # ── 1. Overall Score Card ─────────────────────────
-        ov_label, ov_color = score_info(overall_score)
+        ov_label, ov_color, ov_hex = score_info(overall_score)
         risk_txt   = "AT RISK" if failure_risk else "HEALTHY"
         risk_color = RED if failure_risk else GREEN
 
@@ -659,7 +660,7 @@ def predict_csv():
 
         score_detail = Table([
             [Paragraph("OVERALL HEALTH SCORE", ps('ot', fontSize=8, textColor=SLATE, fontName='Helvetica-Bold', leading=12))],
-            [Paragraph(f"<font size=28 color='#{ov_color.hexval()[1:]}'><b>{int(overall_score)}</b></font><font size=11 color='#64748b'> / 100</font>",
+            [Paragraph(f"<font size=28 color='{ov_hex}'><b>{int(overall_score)}</b></font><font size=11 color='#64748b'> / 100</font>",
                 ps('sc', fontSize=10, leading=34))],
             [Paragraph(ov_label, ps('sl', fontSize=12, textColor=ov_color, fontName='Helvetica-Bold', leading=16))],
             [Paragraph(risk_txt,  ps('rl', fontSize=9,  textColor=risk_color, fontName='Helvetica-Bold', leading=14))],
@@ -723,11 +724,11 @@ def predict_csv():
         ]
 
         def comp_cell(name, score):
-            lbl, clr = score_info(score)
+            lbl, clr, clr_hex = score_info(score)
             bar = ScoreBar(score, clr, width=160, height=7)
             tbl = Table([
                 [Paragraph(f"<b>{name}</b>", ps('cn', fontSize=9, textColor=NAVY, leading=13)),
-                 Paragraph(f"<font color='#{clr.hexval()[1:]}'><b>{int(score)}</b></font>",
+                 Paragraph(f"<font color='{clr_hex}'><b>{int(score)}</b></font>",
                            ps('cs', fontSize=14, fontName='Helvetica-Bold', leading=16, alignment=TA_RIGHT))],
                 [bar, Paragraph(lbl, ps('cl', fontSize=7.5, textColor=clr, fontName='Helvetica-Bold',
                                         leading=10, alignment=TA_RIGHT))],
