@@ -449,4 +449,4 @@ def generate_report_pdf(
     doc.build(story)
     pdf_bytes = buf.getvalue()
     buf.close()
-    return pdf_bytes
+    return pdf_bytes# Deployment trigger refresh
