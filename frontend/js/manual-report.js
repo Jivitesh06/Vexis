@@ -55,13 +55,17 @@ async function saveReportToFirestore(uid, payload) {
       quality:       payload.quality      || '',
       rows_analysed: payload.rows_analysed || 0,
       backend_report_id: payload.report_id || null,
+      // Store PDF so user can always re-download without hitting the backend
+      pdf_base64:    payload.pdf_base64   || null,
+      pdf_filename:  payload.filename     || `vexis_${payload.vehicle_name || 'report'}_report.pdf`,
       timestamp:     serverTimestamp(),
     });
-    console.log('[Firestore] Report saved.');
+    console.log('[Firestore] Report + PDF saved.');
   } catch (err) {
     console.warn('[Firestore] Could not save report:', err.message);
   }
 }
+
 
 /* ── HTML template ── */
 function buildHTML() {

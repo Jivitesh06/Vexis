@@ -1602,12 +1602,11 @@ async function loadReportsSection(container, vehicleFilter = '') {
               <td style="padding:12px 14px;color:${scoreColor(fmtScore(r.engine_score))}">${fmtScore(r.engine_score)}</td>
               <td style="padding:12px 14px;color:${scoreColor(fmtScore(r.fuel_score))}">${fmtScore(r.fuel_score)}</td>
               <td style="padding:12px 14px;white-space:nowrap;display:flex;gap:6px">
-                ${r.backend_report_id ? `
-                <button data-dl="${r.backend_report_id}" title="Download PDF"
+                <button data-dl-fs="${r.id}" title="Download PDF"
                   style="background:rgba(0,229,255,0.1);border:1px solid rgba(0,229,255,0.2);color:#00e5ff;padding:6px 11px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600"
                   onmouseover="this.style.background='rgba(0,229,255,0.22)'" onmouseout="this.style.background='rgba(0,229,255,0.1)'">
                   ⬇ PDF
-                </button>` : '<span style="font-size:11px;color:var(--muted);padding:6px 4px">No PDF</span>'}
+                </button>
                 <button data-del-fs="${r.id}" title="Delete"
                   style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.22);color:#ef4444;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600"
                   onmouseover="this.style.background='rgba(239,68,68,0.2)'" onmouseout="this.style.background='rgba(239,68,68,0.08)'">
@@ -1623,26 +1622,47 @@ async function loadReportsSection(container, vehicleFilter = '') {
       </div>
     </div>`;
 
-    // ── PDF Download (backend best-effort) ──
-    body.querySelectorAll('[data-dl]').forEach(btn => {
+    // ── PDF Download — reads pdf_base64 from Firestore (always works) ──
+    body.querySelectorAll('[data-dl-fs]').forEach(btn => {
       btn.addEventListener('click', async () => {
-        const id = btn.dataset.dl;
-        btn.textContent = '…';
+        const fsId = btn.dataset.dlFs;
+        btn.textContent = '…'; btn.disabled = true;
         try {
-          const tk = await currentUser.getIdToken();
-          const r  = await fetch(`${API_BASE}/reports/download/${id}`, {
-            headers: { 'Authorization': `Bearer ${tk}` }
-          });
-          if (!r.ok) throw new Error('Server unavailable');
-          const blob = await r.blob();
-          const a = Object.assign(document.createElement('a'), {
-            href: URL.createObjectURL(blob), download: `vexis_report_${id}.pdf`
-          });
-          a.click(); URL.revokeObjectURL(a.href);
-        } catch(e) { showToast('PDF download failed: ' + e.message, 'error'); }
-        btn.textContent = '⬇ PDF';
+          // Fetch the Firestore doc to get stored pdf_base64
+          const snap = await getDoc(doc(db, `users/${currentUser.uid}/reports/${fsId}`));
+          if (!snap.exists()) throw new Error('Report not found');
+          const data = snap.data();
+
+          if (data.pdf_base64) {
+            // Direct client-side download from stored base64
+            const bytes = Uint8Array.from(atob(data.pdf_base64), c => c.charCodeAt(0));
+            const blob  = new Blob([bytes], { type: 'application/pdf' });
+            const fname = data.pdf_filename || `vexis_report.pdf`;
+            const a = Object.assign(document.createElement('a'), {
+              href: URL.createObjectURL(blob), download: fname
+            });
+            document.body.appendChild(a); a.click();
+            document.body.removeChild(a); URL.revokeObjectURL(a.href);
+          } else if (data.backend_report_id) {
+            // Fallback: try backend API for older records without stored PDF
+            const tk = await currentUser.getIdToken();
+            const r  = await fetch(`${API_BASE}/reports/download/${data.backend_report_id}`, {
+              headers: { 'Authorization': `Bearer ${tk}` }
+            });
+            if (!r.ok) throw new Error('Backend unavailable');
+            const blob = await r.blob();
+            const a = Object.assign(document.createElement('a'), {
+              href: URL.createObjectURL(blob), download: `vexis_report_${data.backend_report_id}.pdf`
+            });
+            a.click(); URL.revokeObjectURL(a.href);
+          } else {
+            throw new Error('No PDF available for this report');
+          }
+        } catch(e) { showToast('Download failed: ' + e.message, 'error'); }
+        btn.textContent = '⬇ PDF'; btn.disabled = false;
       });
     });
+
 
     // ── Delete from Firestore ──
     body.querySelectorAll('[data-del-fs]').forEach(btn => {
