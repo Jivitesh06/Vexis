@@ -623,13 +623,31 @@ def predict_csv():
         pdf_bytes = buf.getvalue()
         buf.close()
 
-        response = make_response(pdf_bytes)
-        response.headers['Content-Type']        = 'application/pdf'
-        response.headers['Content-Disposition'] = 'attachment; filename=vexis_manual_report.pdf'
-        response.headers['Access-Control-Expose-Headers'] = 'X-Report-Id'
-        if report_id:
-            response.headers['X-Report-Id'] = str(report_id)
-        return response
+        # Return JSON with scores + base64-encoded PDF so the frontend can:
+        # 1. Save scores to Firestore (reliable Past Reports storage)
+        # 2. Trigger PDF download locally from base64 (no extra round-trip)
+        import base64
+        return jsonify({
+            "success":      True,
+            "pdf_base64":   base64.b64encode(pdf_bytes).decode('utf-8'),
+            "filename":     f"vexis_{vehicle_name.replace(' ','_')}_report.pdf",
+            "report_id":    report_id,
+            "vehicle_name": vehicle_name,
+            "vehicle_model":vehicle_model,
+            "scores": {
+                "overall":    overall_score,
+                "engine":     engine_score,
+                "fuel":       fuel_score,
+                "efficiency": efficiency_score,
+                "driving":    driving_score,
+                "thermal":    thermal_score,
+            },
+            "status_label":  status_label,
+            "failure_risk":  failure_risk,
+            "issues":        persist_issues,
+            "quality":       quality,
+            "rows_analysed": len(results),
+        })
 
     except Exception as e:
         print(f"[predict_csv error] {e}")
