@@ -1,0 +1,25 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Users: each user owns their own document and subcollections ──
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      // Reports subcollection
+      match /reports/{reportId} {
+        allow read, write, delete: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    // ── Vehicles: top-level collection, userId field must match caller ──
+    match /vehicles/{vehicleId} {
+      allow read, write, delete: if request.auth != null
+                                 && resource.data.userId == request.auth.uid;
+      // Allow create when the new document's userId matches the caller
+      allow create: if request.auth != null
+                    && request.resource.data.userId == request.auth.uid;
+    }
+
+  }
+}

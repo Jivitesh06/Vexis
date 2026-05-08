@@ -340,14 +340,17 @@ def predict_csv():
     try:
         import pandas as pd
         import io as _io
-        from reportlab.lib.pagesizes import letter
-        from reportlab.lib import colors
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib.units import inch
-        from reportlab.lib.enums import TA_CENTER
-        from flask import make_response
+        import base64
         from datetime import datetime
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib import colors as rc
+        from reportlab.lib.units import mm
+        from reportlab.lib.styles import ParagraphStyle
+        from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+        from reportlab.platypus import (
+            BaseDocTemplate, PageTemplate, Frame, Flowable,
+            Spacer, Paragraph, Table, TableStyle, KeepTogether
+        )
 
         if 'file' not in request.files:
             return jsonify({"error": "No file uploaded"}), 400
@@ -480,158 +483,418 @@ def predict_csv():
         except Exception as db_err:
             print(f"[WARN] predict_csv: DB save failed (PDF still returning): {db_err}")
 
-        # ── Helper ────────────────────────────────────────────────
-        def score_label(s):
-            if s >= 90: return ("Excellent", colors.HexColor("#22c55e"))
-            if s >= 75: return ("Good",      colors.HexColor("#84cc16"))
-            if s >= 60: return ("Fair",      colors.HexColor("#f59e0b"))
-            if s >= 40: return ("Poor",      colors.HexColor("#f97316"))
-            return              ("Critical", colors.HexColor("#ef4444"))
+        # ══════════════════════════════════════════════════
+        # PROFESSIONAL PDF — industry-level design
+        # ══════════════════════════════════════════════════
 
-        # ── Build PDF ─────────────────────────────────────────────
-        buf    = _io.BytesIO()
-        doc    = SimpleDocTemplate(buf, pagesize=letter,
-                                   rightMargin=50, leftMargin=50,
-                                   topMargin=50, bottomMargin=40)
-        styles = getSampleStyleSheet()
-        story  = []
+        # ── Palette ───────────────────────────────────────
+        NAVY   = rc.HexColor("#0f172a")
+        NAVY2  = rc.HexColor("#1e293b")
+        CYAN   = rc.HexColor("#0ea5e9")
+        GREEN  = rc.HexColor("#22c55e")
+        LIME   = rc.HexColor("#84cc16")
+        AMBER  = rc.HexColor("#f59e0b")
+        ORANGE = rc.HexColor("#f97316")
+        RED    = rc.HexColor("#ef4444")
+        LGRAY  = rc.HexColor("#f1f5f9")
+        BORDER = rc.HexColor("#e2e8f0")
+        MUTED  = rc.HexColor("#64748b")
+        SLATE  = rc.HexColor("#94a3b8")
 
-        # Title
-        title_style = ParagraphStyle('VexisTitle', fontSize=22, fontName='Helvetica-Bold',
-                                      textColor=colors.HexColor("#0ea5e9"), alignment=TA_CENTER,
-                                      spaceAfter=4)
-        sub_style   = ParagraphStyle('VexisSub', fontSize=10, textColor=colors.HexColor("#6b7280"),
-                                      alignment=TA_CENTER, spaceAfter=2)
+        PAGE_W, PAGE_H = A4
+        HMARGIN = 18 * mm
+        GEN_DATE = datetime.now().strftime("%d %b %Y, %H:%M")
 
-        story.append(Paragraph("⬡ VEXIS", title_style))
-        story.append(Paragraph("AI-Powered Vehicle Health Report — Manual CSV Analysis", sub_style))
-        story.append(Paragraph(f"Generated: {datetime.now().strftime('%d %b %Y, %H:%M')}  |  Rows Analysed: {len(results)}  |  Data Quality: {quality}", sub_style))
-        story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#e2e8f0"), spaceAfter=16, spaceBefore=10))
+        def score_info(s):
+            if s >= 90: return ("EXCELLENT", GREEN)
+            if s >= 75: return ("GOOD",      LIME)
+            if s >= 60: return ("FAIR",      AMBER)
+            if s >= 40: return ("POOR",      ORANGE)
+            return              ("CRITICAL",  RED)
 
-        # Overall Score Banner
-        ov_label, ov_color = score_label(overall_score)
-        banner_data = [[
-            Paragraph(f"<b>Overall Health Score</b>", styles['Normal']),
-            Paragraph(f"<b>{overall_score}/100</b>", styles['Normal']),
-            Paragraph(f"<b>{ov_label}</b>", styles['Normal']),
-            Paragraph(f"<b>{'⚠ At Risk' if failure_risk else '✓ Healthy'}</b>", styles['Normal'])
-        ]]
-        banner_table = Table(banner_data, colWidths=[160, 100, 110, 110])
-        banner_table.setStyle(TableStyle([
-            ('BACKGROUND',  (0,0), (-1,0), colors.HexColor("#0f172a")),
-            ('TEXTCOLOR',   (0,0), (-1,0), colors.white),
-            ('FONTSIZE',    (0,0), (-1,0), 11),
-            ('ALIGN',       (0,0), (-1,0), 'CENTER'),
-            ('VALIGN',      (0,0), (-1,0), 'MIDDLE'),
-            ('TOPPADDING',  (0,0), (-1,0), 12),
-            ('BOTTOMPADDING',(0,0), (-1,0), 12),
-            ('BACKGROUND',  (1,0), (1,0), ov_color),
-            ('BACKGROUND',  (2,0), (2,0), ov_color),
-            ('ROUNDEDCORNERS', [4]),
+        # ── Custom Flowables ──────────────────────────────
+        class ScoreBar(Flowable):
+            def __init__(self, score, color, width=170, height=8):
+                Flowable.__init__(self)
+                self.score = min(max(float(score), 0), 100)
+                self.color = color
+                self.width = width
+                self.height = height
+            def wrap(self, *a): return (self.width, self.height)
+            def draw(self):
+                h = self.height
+                self.canv.setFillColor(BORDER)
+                self.canv.roundRect(0, 0, self.width, h, h/2, fill=1, stroke=0)
+                fw = max((self.score / 100) * self.width, h)
+                self.canv.setFillColor(self.color)
+                self.canv.roundRect(0, 0, fw, h, h/2, fill=1, stroke=0)
+
+        class ScoreCircle(Flowable):
+            def __init__(self, score, color, size=88):
+                Flowable.__init__(self)
+                self.score = score
+                self.color = color
+                self.size = size
+            def wrap(self, *a): return (self.size, self.size)
+            def draw(self):
+                cx = cy = self.size / 2
+                r = self.size / 2 - 5
+                # Outer ring
+                self.canv.setFillColor(LGRAY)
+                self.canv.setStrokeColor(BORDER)
+                self.canv.setLineWidth(1)
+                self.canv.circle(cx, cy, r + 5, fill=1, stroke=1)
+                # Colored fill circle
+                self.canv.setFillColor(self.color)
+                self.canv.setStrokeColor(rc.white)
+                self.canv.setLineWidth(3)
+                self.canv.circle(cx, cy, r, fill=1, stroke=1)
+                # Score text
+                s = str(int(self.score))
+                self.canv.setFillColor(rc.white)
+                self.canv.setFont("Helvetica-Bold", 26)
+                tw = self.canv.stringWidth(s, "Helvetica-Bold", 26)
+                self.canv.drawString(cx - tw/2, cy + 3, s)
+                self.canv.setFont("Helvetica", 8)
+                self.canv.setFillColor(rc.HexColor("#cbd5e1"))
+                tw2 = self.canv.stringWidth("/100", "Helvetica", 8)
+                self.canv.drawString(cx - tw2/2, cy - 12, "/100")
+
+        class AccentLine(Flowable):
+            """Colored left-accent section header."""
+            def __init__(self, text, accent=None):
+                Flowable.__init__(self)
+                self.text = text.upper()
+                self.accent = accent or CYAN
+            def wrap(self, aw, ah):
+                self._w = aw
+                return (aw, 20)
+            def draw(self):
+                self.canv.setFillColor(self.accent)
+                self.canv.rect(0, 3, 4, 14, fill=1, stroke=0)
+                self.canv.setFillColor(NAVY)
+                self.canv.setFont("Helvetica-Bold", 11)
+                self.canv.drawString(11, 5, self.text)
+
+        # ── Page template (header + footer on every page) ─
+        def _page(canvas, doc):
+            canvas.saveState()
+            w, h = doc.pagesize
+            # Header band
+            canvas.setFillColor(NAVY)
+            canvas.rect(0, h - 44*mm, w, 44*mm, fill=1, stroke=0)
+            # Brand
+            canvas.setFillColor(CYAN)
+            canvas.setFont("Helvetica-Bold", 26)
+            canvas.drawString(HMARGIN, h - 17*mm, "VEXIS")
+            canvas.setFillColor(SLATE)
+            canvas.setFont("Helvetica", 8)
+            canvas.drawString(HMARGIN, h - 23*mm, "AI VEHICLE INTELLIGENCE PLATFORM")
+            # Thin separator
+            canvas.setStrokeColor(rc.HexColor("#334155"))
+            canvas.setLineWidth(0.5)
+            canvas.line(HMARGIN, h - 26*mm, w - HMARGIN, h - 26*mm)
+            # Vehicle name
+            vname = vehicle_name[:40]
+            canvas.setFillColor(rc.white)
+            canvas.setFont("Helvetica-Bold", 13)
+            canvas.drawString(HMARGIN, h - 33*mm, vname)
+            if vehicle_model:
+                canvas.setFont("Helvetica", 9)
+                canvas.setFillColor(SLATE)
+                canvas.drawString(HMARGIN, h - 38*mm, vehicle_model[:50])
+            # Right meta
+            rx = w - HMARGIN
+            canvas.setFont("Helvetica-Bold", 8)
+            canvas.setFillColor(SLATE)
+            canvas.drawRightString(rx, h - 18*mm, "VEHICLE HEALTH REPORT")
+            canvas.setFont("Helvetica", 8)
+            canvas.drawRightString(rx, h - 23*mm, f"Generated: {GEN_DATE}")
+            canvas.drawRightString(rx, h - 28*mm, f"Readings: {len(results)}   Quality: {quality}")
+            canvas.drawRightString(rx, h - 33*mm, "Powered by Vexis ML Engine")
+            # Footer band
+            canvas.setFillColor(LGRAY)
+            canvas.rect(0, 0, w, 11*mm, fill=1, stroke=0)
+            canvas.setStrokeColor(BORDER)
+            canvas.setLineWidth(0.5)
+            canvas.line(0, 11*mm, w, 11*mm)
+            canvas.setFillColor(MUTED)
+            canvas.setFont("Helvetica", 7)
+            canvas.drawString(HMARGIN, 3.5*mm,
+                "This report is generated by Vexis AI using machine learning. "
+                "Consult a certified mechanic for official diagnosis.")
+            canvas.drawRightString(w - HMARGIN, 3.5*mm, f"Page {doc.page}")
+            canvas.restoreState()
+
+        # ── Doc setup ─────────────────────────────────────
+        buf  = _io.BytesIO()
+        TOP  = 44*mm + 8*mm   # below header
+        BOT  = 11*mm + 6*mm   # above footer
+        frame = Frame(HMARGIN, BOT, PAGE_W - 2*HMARGIN, PAGE_H - TOP - BOT,
+                      leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
+        tmpl  = PageTemplate(id='main', frames=[frame], onPage=_page)
+        pdoc  = BaseDocTemplate(buf, pagesize=A4, pageTemplates=[tmpl])
+
+        # ── Style helpers ─────────────────────────────────
+        def ps(name, **kw):
+            return ParagraphStyle(name, **kw)
+
+        body_style  = ps('body',  fontSize=9,  textColor=NAVY,  leading=14)
+        muted_style = ps('muted', fontSize=8,  textColor=MUTED, leading=12)
+        center9     = ps('c9',    fontSize=9,  textColor=NAVY,  alignment=TA_CENTER, leading=14)
+        center8     = ps('c8',    fontSize=8,  textColor=MUTED, alignment=TA_CENTER, leading=12)
+        bold9       = ps('b9',    fontSize=9,  textColor=NAVY,  fontName='Helvetica-Bold', leading=14)
+        white_bold  = ps('wb',    fontSize=9,  textColor=rc.white, fontName='Helvetica-Bold', leading=14)
+        white_sm    = ps('wsm',   fontSize=8,  textColor=rc.HexColor('#cbd5e1'), leading=12)
+
+        story = []
+
+        # ── 1. Overall Score Card ─────────────────────────
+        ov_label, ov_color = score_info(overall_score)
+        risk_txt   = "AT RISK" if failure_risk else "HEALTHY"
+        risk_color = RED if failure_risk else GREEN
+
+        # Score circle + summary in a side-by-side table
+        circle = ScoreCircle(overall_score, ov_color, size=88)
+
+        score_detail = Table([
+            [Paragraph("OVERALL HEALTH SCORE", ps('ot', fontSize=8, textColor=SLATE, fontName='Helvetica-Bold', leading=12))],
+            [Paragraph(f"<font size=28 color='#{ov_color.hexval()[1:]}'><b>{int(overall_score)}</b></font><font size=11 color='#64748b'> / 100</font>",
+                ps('sc', fontSize=10, leading=34))],
+            [Paragraph(ov_label, ps('sl', fontSize=12, textColor=ov_color, fontName='Helvetica-Bold', leading=16))],
+            [Paragraph(risk_txt,  ps('rl', fontSize=9,  textColor=risk_color, fontName='Helvetica-Bold', leading=14))],
+        ], colWidths=[120])
+        score_detail.setStyle(TableStyle([
+            ('LEFTPADDING',  (0,0),(-1,-1), 0),
+            ('RIGHTPADDING', (0,0),(-1,-1), 0),
+            ('TOPPADDING',   (0,0),(-1,-1), 2),
+            ('BOTTOMPADDING',(0,0),(-1,-1), 2),
         ]))
-        story.append(banner_table)
-        story.append(Spacer(1, 18))
 
-        # Component Scores Table
-        story.append(Paragraph("<b>Component Health Scores</b>", styles['Heading2']))
+        header_card = Table(
+            [[circle, score_detail,
+              Table([
+                [Paragraph("ENGINE",     white_sm), Paragraph(f"<b>{int(engine_score)}</b>",     white_bold)],
+                [Paragraph("FUEL",       white_sm), Paragraph(f"<b>{int(fuel_score)}</b>",       white_bold)],
+                [Paragraph("EFFICIENCY", white_sm), Paragraph(f"<b>{int(efficiency_score)}</b>", white_bold)],
+                [Paragraph("DRIVING",    white_sm), Paragraph(f"<b>{int(driving_score)}</b>",    white_bold)],
+                [Paragraph("THERMAL",    white_sm), Paragraph(f"<b>{int(thermal_score)}</b>",    white_bold)],
+              ], colWidths=[65, 30],
+                style=TableStyle([
+                  ('BACKGROUND',   (0,0),(-1,-1), NAVY2),
+                  ('TEXTCOLOR',    (0,0),(-1,-1), rc.white),
+                  ('TOPPADDING',   (0,0),(-1,-1), 4),
+                  ('BOTTOMPADDING',(0,0),(-1,-1), 4),
+                  ('LEFTPADDING',  (0,0),(0,-1),  8),
+                  ('RIGHTPADDING', (1,0),(1,-1),  8),
+                  ('ALIGN',        (1,0),(1,-1),  'RIGHT'),
+                  ('LINEBELOW',    (0,0),(-1,-2), 0.4, rc.HexColor('#334155')),
+                ]))
+            ]],
+            colWidths=[96, 128, 111]
+        )
+        header_card.setStyle(TableStyle([
+            ('BACKGROUND',   (0,0),(0,0), LGRAY),
+            ('BACKGROUND',   (1,0),(1,0), rc.white),
+            ('ALIGN',        (0,0),(0,0), 'CENTER'),
+            ('VALIGN',       (0,0),(-1,-1), 'MIDDLE'),
+            ('TOPPADDING',   (0,0),(-1,-1), 12),
+            ('BOTTOMPADDING',(0,0),(-1,-1), 12),
+            ('LEFTPADDING',  (0,0),(-1,-1), 10),
+            ('RIGHTPADDING', (0,0),(-1,-1), 10),
+            ('BOX',          (0,0),(-1,-1), 0.8, BORDER),
+            ('LINEAFTER',    (0,0),(0,0),   0.8, BORDER),
+            ('LINEAFTER',    (1,0),(1,0),   0.8, BORDER),
+            ('ROUNDEDCORNERS', [6]),
+        ]))
+        story.append(header_card)
+        story.append(Spacer(1, 14))
+
+        # ── 2. Component Scores ───────────────────────────
+        story.append(AccentLine("Component Health Scores"))
         story.append(Spacer(1, 8))
 
         components = [
-            ("🔧 Engine",      engine_score),
-            ("⛽ Fuel System", fuel_score),
-            ("⚡ Efficiency",  efficiency_score),
-            ("🚗 Driving",     driving_score),
-            ("🌡 Thermal",     thermal_score),
+            ("Engine",     engine_score),
+            ("Fuel System",fuel_score),
+            ("Efficiency", efficiency_score),
+            ("Driving",    driving_score),
+            ("Thermal",    thermal_score),
         ]
-        comp_data = [["Component", "Score", "Status", "Health Bar"]]
-        for name, score in components:
-            lbl, clr = score_label(score)
-            bar_filled = int(score / 5)  # max 20 chars
-            bar = "█" * bar_filled + "░" * (20 - bar_filled)
-            comp_data.append([name, f"{score}/100", lbl, bar])
 
-        comp_table = Table(comp_data, colWidths=[130, 70, 90, 190])
-        comp_table.setStyle(TableStyle([
-            ('BACKGROUND',    (0,0), (-1,0), colors.HexColor("#1e293b")),
-            ('TEXTCOLOR',     (0,0), (-1,0), colors.white),
-            ('FONTNAME',      (0,0), (-1,0), 'Helvetica-Bold'),
-            ('FONTSIZE',      (0,0), (-1,-1), 10),
-            ('ALIGN',         (0,0), (-1,-1), 'CENTER'),
-            ('VALIGN',        (0,0), (-1,-1), 'MIDDLE'),
-            ('TOPPADDING',    (0,0), (-1,-1), 8),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 8),
-            ('GRID',          (0,0), (-1,-1), 0.5, colors.HexColor("#e2e8f0")),
-            ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor("#f8fafc")]),
-            ('FONTNAME',      (3,1), (3,-1), 'Courier'),
-            ('FONTSIZE',      (3,1), (3,-1), 7),
+        def comp_cell(name, score):
+            lbl, clr = score_info(score)
+            bar = ScoreBar(score, clr, width=160, height=7)
+            tbl = Table([
+                [Paragraph(f"<b>{name}</b>", ps('cn', fontSize=9, textColor=NAVY, leading=13)),
+                 Paragraph(f"<font color='#{clr.hexval()[1:]}'><b>{int(score)}</b></font>",
+                           ps('cs', fontSize=14, fontName='Helvetica-Bold', leading=16, alignment=TA_RIGHT))],
+                [bar, Paragraph(lbl, ps('cl', fontSize=7.5, textColor=clr, fontName='Helvetica-Bold',
+                                        leading=10, alignment=TA_RIGHT))],
+            ], colWidths=[100, 60])
+            tbl.setStyle(TableStyle([
+                ('LEFTPADDING',  (0,0),(-1,-1), 0),
+                ('RIGHTPADDING', (0,0),(-1,-1), 0),
+                ('TOPPADDING',   (0,0),(-1,-1), 2),
+                ('BOTTOMPADDING',(0,0),(-1,-1), 2),
+                ('SPAN',         (0,1),(0,1)),
+                ('VALIGN',       (0,0),(-1,-1), 'MIDDLE'),
+            ]))
+            return tbl
+
+        # 2 columns: 3 left, 2 right + padding
+        comp_left  = [[comp_cell(n, s)] for n, s in components[:3]]
+        comp_right = [[comp_cell(n, s)] for n, s in components[3:]]
+        comp_right += [[Spacer(1, 1)]]  # filler
+
+        def comp_panel(rows):
+            t = Table(rows, colWidths=[175])
+            t.setStyle(TableStyle([
+                ('BACKGROUND',   (0,0),(-1,-1), rc.white),
+                ('BOX',          (0,0),(-1,-1), 0.6, BORDER),
+                ('LINEBELOW',    (0,0),(-1,-2), 0.4, BORDER),
+                ('TOPPADDING',   (0,0),(-1,-1), 10),
+                ('BOTTOMPADDING',(0,0),(-1,-1), 10),
+                ('LEFTPADDING',  (0,0),(-1,-1), 12),
+                ('RIGHTPADDING', (0,0),(-1,-1), 12),
+                ('ROUNDEDCORNERS', [5]),
+            ]))
+            return t
+
+        comp_grid = Table(
+            [[comp_panel(comp_left), comp_panel(comp_right)]],
+            colWidths=[185, 185], spaceAfter=14
+        )
+        comp_grid.setStyle(TableStyle([
+            ('LEFTPADDING',  (0,0),(-1,-1), 0),
+            ('RIGHTPADDING', (0,0),(-1,-1), 0),
+            ('TOPPADDING',   (0,0),(-1,-1), 0),
+            ('BOTTOMPADDING',(0,0),(-1,-1), 0),
+            ('ALIGN',        (0,0),(-1,-1), 'LEFT'),
+            ('VALIGN',       (0,0),(-1,-1), 'TOP'),
+            ('INNERGRID',    (0,0),(-1,-1), 0, rc.white),
+            ('COLPADDING',   (0,0),(0,-1),  [0,8,0,0]),
         ]))
-        story.append(comp_table)
-        story.append(Spacer(1, 20))
+        story.append(comp_grid)
+        story.append(Spacer(1, 4))
 
-        # Detected Issues
-        story.append(Paragraph("<b>Detected Issues</b>", styles['Heading2']))
+        # ── 3. Detected Issues ────────────────────────────
+        story.append(AccentLine("Detected Issues", accent=RED if persist_issues else GREEN))
         story.append(Spacer(1, 8))
+
         if persist_issues:
-            issue_data = [["#", "Issue Description", "Frequency"]]
+            rows = [[Paragraph("#", white_bold),
+                     Paragraph("Issue Description", white_bold),
+                     Paragraph("Frequency", white_bold)]]
             for i, iss in enumerate(persist_issues, 1):
                 cnt = issue_counts[iss]
                 pct = round(cnt / len(results) * 100)
-                issue_data.append([str(i), iss, f"{pct}% of readings"])
-            issue_table = Table(issue_data, colWidths=[30, 330, 120])
-            issue_table.setStyle(TableStyle([
-                ('BACKGROUND',    (0,0), (-1,0), colors.HexColor("#dc2626")),
-                ('TEXTCOLOR',     (0,0), (-1,0), colors.white),
-                ('FONTNAME',      (0,0), (-1,0), 'Helvetica-Bold'),
-                ('FONTSIZE',      (0,0), (-1,-1), 10),
-                ('ALIGN',         (0,0), (0,-1), 'CENTER'),
-                ('VALIGN',        (0,0), (-1,-1), 'MIDDLE'),
-                ('TOPPADDING',    (0,0), (-1,-1), 8),
-                ('BOTTOMPADDING', (0,0), (-1,-1), 8),
-                ('GRID',          (0,0), (-1,-1), 0.5, colors.HexColor("#fca5a5")),
-                ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.HexColor("#fef2f2"), colors.white]),
+                rows.append([
+                    Paragraph(str(i), center9),
+                    Paragraph(iss, body_style),
+                    Paragraph(f"{pct}%", center9),
+                ])
+            issue_tbl = Table(rows, colWidths=[22, 290, 60])
+            issue_tbl.setStyle(TableStyle([
+                ('BACKGROUND',   (0,0),(-1,0),  RED),
+                ('TEXTCOLOR',    (0,0),(-1,0),  rc.white),
+                ('FONTNAME',     (0,0),(-1,0),  'Helvetica-Bold'),
+                ('FONTSIZE',     (0,0),(-1,-1), 9),
+                ('ALIGN',        (0,0),(0,-1),  'CENTER'),
+                ('ALIGN',        (2,0),(2,-1),  'CENTER'),
+                ('VALIGN',       (0,0),(-1,-1), 'MIDDLE'),
+                ('TOPPADDING',   (0,0),(-1,-1), 7),
+                ('BOTTOMPADDING',(0,0),(-1,-1), 7),
+                ('LEFTPADDING',  (0,0),(-1,-1), 8),
+                ('ROWBACKGROUNDS',(0,1),(-1,-1), [rc.HexColor("#fef2f2"), rc.white]),
+                ('GRID',         (0,0),(-1,-1), 0.4, rc.HexColor("#fecaca")),
+                ('ROUNDEDCORNERS', [4]),
             ]))
-            story.append(issue_table)
+            story.append(issue_tbl)
         else:
-            story.append(Paragraph("✅ No persistent issues detected across readings.", styles['Normal']))
-        story.append(Spacer(1, 20))
+            ok = Table([[Paragraph("No persistent issues detected across all readings.",
+                         ps('ok', fontSize=9, textColor=GREEN, fontName='Helvetica-Bold', leading=14))]],
+                       colWidths=[372])
+            ok.setStyle(TableStyle([
+                ('BACKGROUND',   (0,0),(-1,-1), rc.HexColor("#f0fdf4")),
+                ('BOX',          (0,0),(-1,-1), 0.6, GREEN),
+                ('TOPPADDING',   (0,0),(-1,-1), 10),
+                ('BOTTOMPADDING',(0,0),(-1,-1), 10),
+                ('LEFTPADDING',  (0,0),(-1,-1), 12),
+                ('ROUNDEDCORNERS', [4]),
+            ]))
+            story.append(ok)
 
-        # Recommendations
-        story.append(Paragraph("<b>Recommendations</b>", styles['Heading2']))
+        story.append(Spacer(1, 14))
+
+        # ── 4. Recommendations ────────────────────────────
+        story.append(AccentLine("Recommendations", accent=AMBER))
         story.append(Spacer(1, 8))
+
         recs = []
-        if engine_score < 60:  recs.append("🔧 Engine health is below optimal. Schedule a full engine diagnostic immediately.")
-        if fuel_score < 60:    recs.append("⛽ Fuel system efficiency is low. Check injectors and O2 sensors.")
-        if thermal_score < 60: recs.append("🌡 Thermal stress is high. Inspect cooling system and coolant levels.")
-        if driving_score < 60: recs.append("🚗 Driving pattern is aggressive. Reduce rapid acceleration and hard braking.")
-        if efficiency_score < 60: recs.append("⚡ Engine efficiency is poor. Consider air filter and spark plug inspection.")
-        if not recs:           recs.append("✅ Vehicle is in good health. Continue regular maintenance schedule.")
+        if engine_score     < 60: recs.append("Engine health is below optimal. Schedule a full engine diagnostic immediately.")
+        if fuel_score       < 60: recs.append("Fuel system efficiency is low. Check fuel injectors and O2 sensors.")
+        if thermal_score    < 60: recs.append("Thermal stress is elevated. Inspect the cooling system and coolant levels.")
+        if driving_score    < 60: recs.append("Driving pattern shows aggressive inputs. Reduce hard acceleration and braking.")
+        if efficiency_score < 60: recs.append("Engine efficiency is poor. Inspect air filter and spark plugs.")
+        if not recs:              recs.append("Vehicle is in good health. Maintain regular service intervals.")
 
-        for rec in recs:
-            story.append(Paragraph(f"• {rec}", styles['Normal']))
-            story.append(Spacer(1, 6))
+        rec_rows = []
+        for i, r in enumerate(recs, 1):
+            bg = rc.HexColor("#fffbeb") if i % 2 else rc.white
+            rec_rows.append([
+                Paragraph(f"<b>{i}</b>", ps('rn', fontSize=9, textColor=AMBER, fontName='Helvetica-Bold',
+                                             leading=14, alignment=TA_CENTER)),
+                Paragraph(r, body_style)
+            ])
+        rec_tbl = Table(rec_rows, colWidths=[22, 350])
+        rec_tbl.setStyle(TableStyle([
+            ('VALIGN',       (0,0),(-1,-1), 'MIDDLE'),
+            ('TOPPADDING',   (0,0),(-1,-1), 7),
+            ('BOTTOMPADDING',(0,0),(-1,-1), 7),
+            ('LEFTPADDING',  (0,0),(-1,-1), 8),
+            ('BOX',          (0,0),(-1,-1), 0.5, BORDER),
+            ('LINEBELOW',    (0,0),(-1,-2), 0.4, BORDER),
+            ('ROWBACKGROUNDS',(0,0),(-1,-1), [rc.HexColor("#fffbeb"), rc.white]),
+            ('ROUNDEDCORNERS', [4]),
+        ]))
+        story.append(rec_tbl)
+        story.append(Spacer(1, 14))
 
-        story.append(Spacer(1, 20))
-        story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#e2e8f0")))
-        story.append(Spacer(1, 8))
-        story.append(Paragraph(
-            f"<i>This report was generated by Vexis AI using {len(results)} OBD readings from your uploaded CSV. "
-            f"Data quality: {quality}. This is an automated ML analysis — consult a certified mechanic for official diagnosis.</i>",
-            ParagraphStyle('Disclaimer', fontSize=8, textColor=colors.HexColor("#9ca3af"), alignment=TA_CENTER)
-        ))
+        # ── 5. Scan Summary footer card ───────────────────
+        summary_data = [
+            [Paragraph("READINGS ANALYSED", muted_style), Paragraph("DATA QUALITY", muted_style),
+             Paragraph("ANALYSIS ENGINE", muted_style),   Paragraph("REPORT DATE", muted_style)],
+            [Paragraph(f"<b>{len(results)}</b>", bold9),  Paragraph(f"<b>{quality}</b>", bold9),
+             Paragraph("<b>Vexis ML v1.0</b>", bold9),    Paragraph(f"<b>{GEN_DATE}</b>", bold9)],
+        ]
+        sum_tbl = Table(summary_data, colWidths=[90, 90, 100, 92])
+        sum_tbl.setStyle(TableStyle([
+            ('BACKGROUND',   (0,0),(-1,-1), LGRAY),
+            ('BOX',          (0,0),(-1,-1), 0.5, BORDER),
+            ('INNERGRID',    (0,0),(-1,-1), 0.4, BORDER),
+            ('TOPPADDING',   (0,0),(-1,-1), 7),
+            ('BOTTOMPADDING',(0,0),(-1,-1), 7),
+            ('LEFTPADDING',  (0,0),(-1,-1), 10),
+            ('ALIGN',        (0,0),(-1,-1), 'LEFT'),
+            ('VALIGN',       (0,0),(-1,-1), 'MIDDLE'),
+            ('ROUNDEDCORNERS', [4]),
+        ]))
+        story.append(sum_tbl)
 
-        doc.build(story)
+
+
+
+        pdoc.build(story)
         pdf_bytes = buf.getvalue()
         buf.close()
 
-        # Return JSON with scores + base64-encoded PDF so the frontend can:
-        # 1. Save scores to Firestore (reliable Past Reports storage)
-        # 2. Trigger PDF download locally from base64 (no extra round-trip)
-        import base64
         return jsonify({
             "success":      True,
             "pdf_base64":   base64.b64encode(pdf_bytes).decode('utf-8'),
             "filename":     f"vexis_{vehicle_name.replace(' ','_')}_report.pdf",
             "report_id":    report_id,
+
             "vehicle_name": vehicle_name,
             "vehicle_model":vehicle_model,
             "scores": {
