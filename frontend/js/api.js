@@ -54,27 +54,43 @@ export async function authHeaders() {
   };
 }
 
-// ── 6. apiGet ────────────────────────────────────────────────────
-export async function apiGet(endpoint) {
-  const res = await fetch(API_BASE + endpoint, {
+// ── 6. fetchWithTimeout ─────────────────────────────────────────
+// All backend calls go through this — prevents infinite hangs on cold Render.
+async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const tid = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(tid);
+    return res;
+  } catch (e) {
+    clearTimeout(tid);
+    if (e.name === 'AbortError') throw new Error('Request timed out after ' + timeoutMs + 'ms');
+    throw e;
+  }
+}
+
+// ── 7. apiGet ────────────────────────────────────────────────────
+export async function apiGet(endpoint, timeoutMs = 10000) {
+  const res = await fetchWithTimeout(API_BASE + endpoint, {
     method: 'GET',
     headers: await authHeaders()
-  });
+  }, timeoutMs);
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Request failed');
   return data;
 }
 
-// ── 7. apiPost ───────────────────────────────────────────────────
-export async function apiPost(endpoint, body, skipAuth = false) {
+// ── 8. apiPost ───────────────────────────────────────────────────
+export async function apiPost(endpoint, body, skipAuth = false, timeoutMs = 10000) {
   const headers = skipAuth
     ? { 'Content-Type': 'application/json' }
     : await authHeaders();
-  const res = await fetch(API_BASE + endpoint, {
+  const res = await fetchWithTimeout(API_BASE + endpoint, {
     method: 'POST',
     headers,
     body: JSON.stringify(body)
-  });
+  }, timeoutMs);
   const data = await res.json();
   if (!res.ok) {
     const err = new Error(data.error || 'Request failed');
@@ -85,14 +101,14 @@ export async function apiPost(endpoint, body, skipAuth = false) {
   return data;
 }
 
-// ── 7.5 apiPut ───────────────────────────────────────────────────
-export async function apiPut(endpoint, body) {
+// ── 8.5 apiPut ───────────────────────────────────────────────────
+export async function apiPut(endpoint, body, timeoutMs = 10000) {
   const headers = await authHeaders();
-  const res = await fetch(API_BASE + endpoint, {
+  const res = await fetchWithTimeout(API_BASE + endpoint, {
     method: 'PUT',
     headers,
     body: JSON.stringify(body)
-  });
+  }, timeoutMs);
   const data = await res.json();
   if (!res.ok) {
     const err = new Error(data.error || 'Request failed');
@@ -103,13 +119,13 @@ export async function apiPut(endpoint, body) {
   return data;
 }
 
-// ── 7.6 apiDelete ────────────────────────────────────────────────
-export async function apiDelete(endpoint) {
+// ── 8.6 apiDelete ────────────────────────────────────────────────
+export async function apiDelete(endpoint, timeoutMs = 10000) {
   const headers = await authHeaders();
-  const res = await fetch(API_BASE + endpoint, {
+  const res = await fetchWithTimeout(API_BASE + endpoint, {
     method: 'DELETE',
     headers
-  });
+  }, timeoutMs);
   const data = await res.json();
   if (!res.ok) {
     const err = new Error(data.error || 'Request failed');
