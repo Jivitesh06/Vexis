@@ -405,22 +405,28 @@ def predict_csv():
                 'gradient_speed_stress':  round((rpm / 1000) * (speed / 100), 2),
             }
 
-        # ── Run ML in a real OS thread so eventlet event loop stays alive ──
-        def _run_ml(rows_to_process):
-            _results = []
-            for _row in rows_to_process:
-                enriched = compute_derived(_row)
-                result   = predict_health(enriched)
-                if 'error' not in result:
-                    _results.append(result)
-            return _results
+        # ── Run ML on each row ────────────────────────────────────
+        # Use cooperative yields (eventlet.sleep(0)) between rows so the
+        # eventlet event loop stays alive and worker heartbeat doesn't time out.
+        # ThreadPoolExecutor must NOT be used here — it corrupts eventlet sockets.
+        results = []
+        try:
+            import eventlet as _ev
+            _ev_ok = True
+        except ImportError:
+            _ev_ok = False
 
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            results = pool.submit(_run_ml, rows).result(timeout=240)
+        for row in rows:
+            enriched = compute_derived(row)
+            result   = predict_health(enriched)
+            if 'error' not in result:
+                results.append(result)
+            if _ev_ok:
+                _ev.sleep(0)   # yield to event loop — prevents heartbeat timeout
 
         if len(results) < 3:
             return jsonify({"error": "Too many prediction errors. Check CSV data quality."}), 500
+
 
 
 
