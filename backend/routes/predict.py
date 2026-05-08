@@ -1,4 +1,4 @@
-﻿from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify
 from utils.firebase_auth import firebase_required, get_or_create_user
 from utils.validators import validate_obd_input
 from ml.model_loader import predict_health
@@ -501,10 +501,51 @@ def predict_csv():
             n_results       = len(results),
             quality         = quality,
         )
+        # ── Generate smart notification timeline ──────────────────────
+        try:
+            from utils.timeline_engine import generate_timeline
+            from firebase_admin import firestore as fs
 
+            # Fetch last 3 reports for trend detection
+            db = fs.client()
+            uid = request.user['uid']
+            history_docs = (
+                db.collection('users').document(uid)
+                  .collection('reports')
+                  .order_by('timestamp', direction='DESCENDING')
+                  .limit(4)
+                  .stream()
+            )
+            report_history = [d.to_dict() for d in history_docs]
 
+            timeline = generate_timeline(
+                overall_score    = overall_score,
+                engine_score     = engine_score,
+                fuel_score       = fuel_score,
+                efficiency_score = efficiency_score,
+                driving_score    = driving_score,
+                thermal_score    = thermal_score,
+                persist_issues   = persist_issues,
+                issue_counts     = dict(issue_counts),
+                n_results        = len(results),
+                report_history   = report_history,
+            )
 
+            # Write notification meta to Firestore under the vehicle
+            if vehicle_id:
+                db.collection('vehicles').document(vehicle_id)\
+                  .collection('notification_meta').document('current')\
+                  .set({
+                      **timeline,
+                      'uid':           uid,
+                      'user_email':    request.user.get('email', ''),
+                      'vehicle_name':  vehicle_name,
+                      'vehicle_model': vehicle_model,
+                  })
 
+            print(f'[NOTIFY] Timeline written for vehicle={vehicle_id} tier={timeline["tier"]}')
+        except Exception as notify_err:
+            print(f'[WARN] Timeline generation failed (non-fatal): {notify_err}')
 
 
         return jsonify({

@@ -10,6 +10,11 @@ service cloud.firestore {
       match /reports/{reportId} {
         allow read, write, delete: if request.auth != null && request.auth.uid == userId;
       }
+
+      // Notification settings subcollection
+      match /settings/{settingId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
     }
 
     // ── Vehicles: top-level collection, userId field must match caller ──
@@ -19,6 +24,13 @@ service cloud.firestore {
       // Allow create when the new document's userId matches the caller
       allow create: if request.auth != null
                     && request.resource.data.userId == request.auth.uid;
+
+      // Notification meta subcollection — backend writes via Admin SDK (unrestricted)
+      // Reads allowed by the vehicle owner
+      match /notification_meta/{docId} {
+        allow read: if request.auth != null
+                    && get(/databases/$(database)/documents/vehicles/$(vehicleId)).data.userId == request.auth.uid;
+      }
     }
 
   }
