@@ -27,7 +27,42 @@ app.config.from_object(Config)
 # Initialize Firebase
 init_firebase()
 
-CORS(app, origins=Config.CORS_ORIGINS)
+# ── CORS — must cover ALL responses including 500 errors ──────────
+# flask-cors alone won't add headers to error responses,
+# so we also use an after_request hook.
+CORS(app,
+     origins=Config.CORS_ORIGINS,
+     supports_credentials=True,
+     allow_headers=['Content-Type', 'Authorization'],
+     methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
+
+@app.after_request
+def _add_cors(response):
+    """Ensure CORS headers are on EVERY response, including 4xx/5xx."""
+    origin = request.headers.get('Origin', '')
+    allowed = Config.CORS_ORIGINS
+    if origin in allowed or '*' in allowed:
+        response.headers['Access-Control-Allow-Origin']      = origin
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        response.headers['Access-Control-Allow-Headers']     = 'Content-Type, Authorization'
+        response.headers['Access-Control-Allow-Methods']     = 'GET, POST, PUT, DELETE, OPTIONS'
+        response.headers['Access-Control-Expose-Headers']    = 'X-Report-Id'
+    return response
+
+@app.before_request
+def _handle_options():
+    """Immediately return 200 for CORS preflight OPTIONS requests."""
+    if request.method == 'OPTIONS':
+        from flask import make_response
+        resp = make_response('', 200)
+        origin = request.headers.get('Origin', '')
+        if origin in Config.CORS_ORIGINS:
+            resp.headers['Access-Control-Allow-Origin']      = origin
+            resp.headers['Access-Control-Allow-Credentials'] = 'true'
+            resp.headers['Access-Control-Allow-Headers']     = 'Content-Type, Authorization'
+            resp.headers['Access-Control-Allow-Methods']     = 'GET, POST, PUT, DELETE, OPTIONS'
+            resp.headers['Access-Control-Max-Age']           = '86400'
+        return resp
 
 socketio = SocketIO(
     app,
@@ -151,7 +186,17 @@ def method_not_allowed(e):
 
 @app.errorhandler(500)
 def server_error(e):
-    return jsonify({"error": "Internal server error"}), 500
+    import traceback
+    print(f"[500 ERROR] {e}")
+    traceback.print_exc()
+    return jsonify({"error": str(e) or "Internal server error"}), 500
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    import traceback
+    print(f"[UNHANDLED] {type(e).__name__}: {e}")
+    traceback.print_exc()
+    return jsonify({"error": str(e)}), 500
 
 # ──────────────────────────────────────────────────────────────────
 # Startup
