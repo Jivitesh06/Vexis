@@ -3,7 +3,7 @@ eventlet.monkey_patch()
 
 from flask import Flask, jsonify, request, send_from_directory
 import os
-from flask_cors import CORS
+# flask_cors removed — CORS handled manually via after_request + before_request hooks below
 from flask_socketio import SocketIO, emit
 from config import Config
 from database import init_db
@@ -27,14 +27,9 @@ app.config.from_object(Config)
 # Initialize Firebase
 init_firebase()
 
-# ── CORS — must cover ALL responses including 500 errors ──────────
-# flask-cors alone won't add headers to error responses,
-# so we also use an after_request hook.
-CORS(app,
-     origins=Config.CORS_ORIGINS,
-     supports_credentials=True,
-     allow_headers=['Content-Type', 'Authorization'],
-     methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
+# ── CORS handled entirely by after_request + before_request below ──
+# flask_cors was removed because it created duplicate Access-Control-Allow-Origin
+# headers (Chrome rejects responses with duplicate CORS headers).
 
 @app.after_request
 def _add_cors(response):
