@@ -1385,6 +1385,13 @@ async function loadVehiclesSection(container) {
                   <svg viewBox="0 0 24 24" fill="none" width="15" height="15"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
                   Get Report
                 </button>
+                <!-- Past Reports Button -->
+                <button class="past-reports-btn" data-vname="${v.name}"
+                  style="width:100%;margin-top:8px;padding:9px;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:7px;border-radius:8px;background:rgba(0,229,255,0.07);border:1px solid rgba(0,229,255,0.2);color:#00e5ff;cursor:pointer;transition:all .2s"
+                  onmouseover="this.style.background='rgba(0,229,255,0.15)'" onmouseout="this.style.background='rgba(0,229,255,0.07)'">
+                  <svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" stroke="currentColor" stroke-width="1.8"/><path d="M14 2v6h6M16 13H8M16 17H8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                  Past Reports
+                </button>
               </div>
             `).join('')}
           </div>
@@ -1411,6 +1418,19 @@ async function loadVehiclesSection(container) {
               name:  btn.dataset.vname,
               model: btn.dataset.vmodel
             });
+          });
+        });
+        // Attach Past Reports listeners — navigate to reports section filtered by vehicle
+        listContainer.querySelectorAll('.past-reports-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const vname = btn.dataset.vname;
+            const contentArea = document.getElementById('content-area');
+            if (contentArea && window.loadReportsSection) {
+              // Switch active nav
+              document.querySelectorAll('.nav-item[data-section]').forEach(n => n.classList.remove('active'));
+              document.querySelector('.nav-item[data-section="reports"]')?.classList.add('active');
+              loadReportsSection(contentArea, vname);
+            }
           });
         });
       }
@@ -1486,13 +1506,15 @@ async function loadVehiclesSection(container) {
   }
 }
 
-async function loadReportsSection(container) {
+async function loadReportsSection(container, vehicleFilter = '') {
+  const filterNote = vehicleFilter ? ` — ${vehicleFilter}` : '';
   container.innerHTML = `
   <div class="section-header">
     <div>
-      <h1 class="section-title">Past Reports</h1>
+      <h1 class="section-title">Past Reports${filterNote}</h1>
       <p class="section-subtitle">All vehicle health reports linked to your account</p>
     </div>
+    ${vehicleFilter ? `<button id="rpt-clear-filter" style="background:rgba(0,229,255,0.1);border:1px solid rgba(0,229,255,0.25);color:#00e5ff;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">✕ Show All Reports</button>` : ''}
   </div>
   <div id="reports-body">
     <div class="placeholder-section reveal">
@@ -1502,73 +1524,157 @@ async function loadReportsSection(container) {
           <path d="M14 2v6h6M16 13H8M16 17H8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
         </svg>
       </div>
-      <p class="placeholder-title">Loading Reports...</p>
+      <p class="placeholder-title">Loading reports…</p>
     </div>
   </div>`;
+
+  if (vehicleFilter) {
+    document.getElementById('rpt-clear-filter')?.addEventListener('click', () => loadReportsSection(container));
+  }
 
   try {
     const currentUser = auth.currentUser;
     if (!currentUser) throw new Error('Not authenticated');
 
-    // Read from backend DB (not Firestore — reports are stored in PostgreSQL)
     const token = await currentUser.getIdToken();
-    const res = await fetch(`${API_BASE}/reports`, {
-      headers: { 'Authorization': `Bearer ${token}` }
+    const url   = vehicleFilter
+      ? `${API_BASE}/reports?vehicle_name=${encodeURIComponent(vehicleFilter)}`
+      : `${API_BASE}/reports`;
+
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), 10000);
+    const res = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${token}` },
+      signal: controller.signal
     });
-    if (!res.ok) throw new Error('Failed to load reports');
-    const data = await res.json();
+    clearTimeout(tid);
+
+    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'Failed to load'); }
+    const data    = await res.json();
     const reports = data.reports || [];
 
     const body = document.getElementById('reports-body');
     if (!body) return;
+
     if (reports.length === 0) {
       body.innerHTML = `<div class="placeholder-section reveal">
         <p class="placeholder-title">No Reports Yet</p>
-        <p class="placeholder-sub">Run a vehicle scan or upload a CSV to generate your first report.</p>
+        <p class="placeholder-sub">${vehicleFilter ? `No reports for "${vehicleFilter}".` : 'Run a vehicle scan or upload a CSV to generate your first report.'}</p>
       </div>`;
-    } else {
-      const srcLabel = s => s === 'csv_upload' ? '📄 CSV' : '🔌 OBD Live';
-      body.innerHTML = `
-      <div class="glass-card" style="overflow:auto">
-        <table style="width:100%;border-collapse:collapse;font-family:var(--font-body);font-size:13px">
-          <thead>
-            <tr style="border-bottom:1px solid var(--glass-border)">
-              ${['Date','Vehicle','Source','Score','Status','Engine','Fuel','Download'].map(h=>`
-                <th style="padding:12px 14px;text-align:left;color:var(--muted);font-weight:600;letter-spacing:1px;font-size:11px;text-transform:uppercase;white-space:nowrap">${h}</th>`).join('')}
-            </tr>
-          </thead>
-          <tbody>
-            ${reports.map(r => {
-              const ts  = r.timestamp ? new Date(r.timestamp).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : 'N/A';
-              const veh = r.vehicle_name ? `${r.vehicle_name}${r.vehicle_model?' — '+r.vehicle_model:''}` : '—';
-              const sc  = Math.round(r.overall_score || 0);
-              const st  = r.status_label || scoreLabel(sc);
-              return `
-            <tr style="border-bottom:1px solid rgba(255,255,255,0.04);transition:background 0.2s" onmouseenter="this.style.background='rgba(0,229,255,0.03)'" onmouseleave="this.style.background=''">
+      initRevealAnimations(); return;
+    }
+
+    const srcLabel = s => s === 'csv_upload' ? '📄 CSV Upload' : '🔌 Live OBD';
+
+    body.innerHTML = `
+    <div class="glass-card" style="overflow:auto">
+      <table id="reports-table" style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="border-bottom:1px solid var(--glass-border)">
+            ${['Date','Vehicle','Source','Score','Status','Engine','Fuel','Actions'].map(h =>
+              `<th style="padding:12px 14px;text-align:left;color:var(--muted);font-weight:600;letter-spacing:1px;font-size:11px;text-transform:uppercase;white-space:nowrap">${h}</th>`
+            ).join('')}
+          </tr>
+        </thead>
+        <tbody id="reports-tbody">
+          ${reports.map(r => {
+            const ts  = r.timestamp ? new Date(r.timestamp).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+            const veh = r.vehicle_name ? `${r.vehicle_name}${r.vehicle_model ? ' — '+r.vehicle_model : ''}` : '—';
+            const sc  = Math.round(r.overall_score || 0);
+            const st  = r.status_label || scoreLabel(sc);
+            return `
+            <tr id="row-${r.id}" style="border-bottom:1px solid rgba(255,255,255,0.04);transition:background .2s"
+                onmouseenter="this.style.background='rgba(0,229,255,0.03)'"
+                onmouseleave="this.style.background=''">
               <td style="padding:12px 14px;color:var(--text-dim);white-space:nowrap">${ts}</td>
-              <td style="padding:12px 14px;color:var(--text);font-size:12px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${veh}">${veh}</td>
+              <td style="padding:12px 14px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${veh}">${veh}</td>
               <td style="padding:12px 14px;font-size:11px;color:var(--muted)">${srcLabel(r.source)}</td>
               <td style="padding:12px 14px"><span style="font-family:var(--font-display);color:${scoreColor(sc)};font-weight:700">${sc}</span></td>
               <td style="padding:12px 14px"><span class="badge ${getBadgeClass(st)}">${st}</span></td>
               <td style="padding:12px 14px;color:${scoreColor(r.engine_score||0)}">${Math.round(r.engine_score||0)}</td>
               <td style="padding:12px 14px;color:${scoreColor(r.fuel_score||0)}">${Math.round(r.fuel_score||0)}</td>
-              <td style="padding:12px 14px">
-                <button onclick="window.open('${API_BASE}/reports/download/${r.id}')" style="background:rgba(0,229,255,0.1);border:1px solid rgba(0,229,255,0.2);color:var(--accent);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;transition:all .2s" onmouseover="this.style.background='rgba(0,229,255,0.2)'" onmouseout="this.style.background='rgba(0,229,255,0.1)'">
+              <td style="padding:12px 14px;white-space:nowrap;display:flex;gap:6px">
+                <button data-dl="${r.id}" title="Download PDF"
+                  style="background:rgba(0,229,255,0.1);border:1px solid rgba(0,229,255,0.2);color:#00e5ff;padding:6px 11px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;transition:all .2s"
+                  onmouseover="this.style.background='rgba(0,229,255,0.22)'" onmouseout="this.style.background='rgba(0,229,255,0.1)'">
                   ⬇ PDF
+                </button>
+                <button data-del="${r.id}" title="Delete report"
+                  style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.22);color:#ef4444;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;transition:all .2s"
+                  onmouseover="this.style.background='rgba(239,68,68,0.2)'" onmouseout="this.style.background='rgba(239,68,68,0.08)'">
+                  🗑
                 </button>
               </td>
             </tr>`;
-            }).join('')}
-          </tbody>
-        </table>
-      </div>`;
-    }
+          }).join('')}
+        </tbody>
+      </table>
+      <div style="padding:12px 16px;font-size:11px;color:var(--muted);border-top:1px solid var(--glass-border)">
+        ${reports.length} report${reports.length !== 1 ? 's' : ''} total
+      </div>
+    </div>`;
+
+    // ── Download handler ──
+    body.querySelectorAll('[data-dl]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.dl;
+        btn.textContent = '…';
+        try {
+          const tk = await currentUser.getIdToken();
+          const r  = await fetch(`${API_BASE}/reports/download/${id}`, {
+            headers: { 'Authorization': `Bearer ${tk}` }
+          });
+          if (!r.ok) throw new Error('Download failed');
+          const blob = await r.blob();
+          const a = document.createElement('a');
+          a.href     = URL.createObjectURL(blob);
+          a.download = `vexis_report_${id}.pdf`;
+          a.click();
+          URL.revokeObjectURL(a.href);
+        } catch(e) { showToast('Download failed: ' + e.message, 'error'); }
+        btn.textContent = '⬇ PDF';
+      });
+    });
+
+    // ── Delete handler ──
+    body.querySelectorAll('[data-del]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.del;
+        if (!confirm('Delete this report permanently?')) return;
+        btn.textContent = '…'; btn.disabled = true;
+        try {
+          const tk  = await currentUser.getIdToken();
+          const res = await fetch(`${API_BASE}/reports/${id}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${tk}` }
+          });
+          if (!res.ok) throw new Error('Delete failed');
+          const row = document.getElementById(`row-${id}`);
+          if (row) { row.style.transition = 'opacity .3s'; row.style.opacity = '0'; setTimeout(() => row.remove(), 300); }
+          showToast('Report deleted.', 'success');
+        } catch(e) {
+          showToast('Delete failed: ' + e.message, 'error');
+          btn.textContent = '🗑'; btn.disabled = false;
+        }
+      });
+    });
+
   } catch(e) {
     const body = document.getElementById('reports-body');
-    if (body) body.innerHTML = `<div class="placeholder-section reveal"><p class="placeholder-title">Could not load reports.</p><p class="placeholder-sub">${e.message}</p></div>`;
+    if (body) body.innerHTML = `<div class="placeholder-section reveal">
+      <p class="placeholder-title">Could not load reports.</p>
+      <p class="placeholder-sub">${e.name === 'AbortError' ? 'Backend is starting up — try again in a few seconds.' : e.message}</p>
+      <button onclick="window.loadReportsSection(document.getElementById('content-area'))"
+        style="margin-top:16px;background:rgba(0,229,255,0.1);border:1px solid rgba(0,229,255,0.25);color:#00e5ff;padding:10px 20px;border-radius:8px;cursor:pointer;font-weight:600">
+        ↻ Retry
+      </button>
+    </div>`;
   }
   initRevealAnimations();
 }
+window.loadReportsSection = loadReportsSection;
+
+
 
 async function loadProfileSection(container) {
   const currentUser = auth.currentUser;

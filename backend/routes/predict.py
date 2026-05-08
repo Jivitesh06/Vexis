@@ -356,6 +356,11 @@ def predict_csv():
         if not f.filename.endswith('.csv'):
             return jsonify({"error": "Please upload a .csv file"}), 400
 
+        # ── Vehicle details from FormData ─────────────────────────
+        vehicle_name  = (request.form.get('vehicle_name')  or '').strip() or 'My Vehicle'
+        vehicle_model = (request.form.get('vehicle_model') or '').strip()
+        vehicle_id    = (request.form.get('vehicle_id')    or '').strip()
+
         # ── Parse CSV ─────────────────────────────────────────────
         content = f.read().decode('utf-8')
         df = pd.read_csv(_io.StringIO(content))
@@ -435,6 +440,14 @@ def predict_csv():
         try:
             db_user = get_or_create_user(request.user['uid'], request.user['email'])
             if db_user:
+                raw_meta = {
+                    "source":        "csv_upload",
+                    "rows":          len(results),
+                    "quality":       quality,
+                    "vehicle_name":  vehicle_name,
+                    "vehicle_model": vehicle_model,
+                    "vehicle_id":    vehicle_id,
+                }
                 report_row = execute_query(
                     """INSERT INTO reports
                        (user_id, engine_score, fuel_score, stress_score,
@@ -444,7 +457,7 @@ def predict_csv():
                     (
                         db_user['id'], engine_score, fuel_score, driving_score,
                         overall_score, 1 if failure_risk else 0, status_label,
-                        json.dumps({"source": "csv_upload", "rows": len(results), "quality": quality}),
+                        json.dumps(raw_meta),
                         json.dumps(persist_issues)
                     ),
                     fetchone=True, commit=True
