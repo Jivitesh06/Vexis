@@ -1,4 +1,5 @@
 import pickle
+import json
 import numpy as np
 import pandas as pd
 import os
@@ -8,23 +9,13 @@ from config import Config
 # Feature sets — exact column names used during training
 # ──────────────────────────────────────────────────────────────────
 COMPONENT_FEATURES = {
-    'engine': [
-        'rpm', 'load', 'maf_per_rpm', 'rpm_load_ratio', 'maf'
-    ],
-    'fuel': [
-        'stft', 'ltft', 'fuel_trim_combined', 'fuel_trim_abs'
-    ],
-    'efficiency': [
-        'maf_per_rpm', 'maf_per_speed', 'load_per_speed',
-        'maf_speed_deviation'
-    ],
-    'driving': [
-        'speed', 'speed_limit', 'speed_excess', 'is_overspeeding',
-        'rpm', 'gradient_speed_stress'
-    ],
-    'thermal': [
-        'oat', 'thermal_stress', 'maf_temp_adjusted', 'load'
-    ]
+    'engine':     ['rpm', 'load', 'maf_per_rpm', 'rpm_load_ratio', 'maf'],
+    'fuel':       ['stft', 'ltft', 'fuel_trim_combined', 'fuel_trim_abs'],
+    'efficiency': ['maf_per_rpm', 'maf_per_speed', 'load_per_speed',
+                   'maf_speed_deviation'],
+    'driving':    ['speed', 'speed_limit', 'speed_excess', 'is_overspeeding',
+                   'rpm', 'gradient_speed_stress'],
+    'thermal':    ['oat', 'thermal_stress', 'maf_temp_adjusted', 'load']
 }
 
 # Component weights (must sum to 1.0)
@@ -36,8 +27,9 @@ COMPONENT_WEIGHTS = {
     'thermal':    0.10
 }
 
-# Module-level model registry — loaded once at startup
+# Module-level registry — populated once at startup
 MODELS = {}
+CALIBRATION = {}   # {comp: {lower: float, upper: float}}
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -45,53 +37,58 @@ MODELS = {}
 # ──────────────────────────────────────────────────────────────────
 def load_models():
     """
-    Load all 5 Isolation Forest models and their paired scalers from
-    the models_pkl/ directory.  Called once at app startup.
+    Load all 5 Isolation Forest models, scalers, and calibration bounds
+    from models_pkl/. Called once at app startup.
     """
-    components = ['engine', 'fuel', 'efficiency', 'driving', 'thermal']
+    components  = list(COMPONENT_FEATURES.keys())
     models_path = Config.ML_MODELS_PATH
-    loaded_count = 0
+    loaded      = 0
 
     for comp in components:
         model_path  = os.path.join(models_path, f'if_{comp}.pkl')
         scaler_path = os.path.join(models_path, f'scaler_{comp}.pkl')
-
         try:
-            with open(model_path, 'rb') as f:
-                MODELS[comp] = pickle.load(f)
-
-            with open(scaler_path, 'rb') as f:
-                MODELS[f'scaler_{comp}'] = pickle.load(f)
-
+            with open(model_path,  'rb') as f: MODELS[comp] = pickle.load(f)
+            with open(scaler_path, 'rb') as f: MODELS[f'scaler_{comp}'] = pickle.load(f)
             print(f"  Loaded: if_{comp}.pkl + scaler_{comp}.pkl")
-            loaded_count += 1
-
+            loaded += 1
         except FileNotFoundError:
             print(f"  [WARNING] Model files not found for '{comp}' — skipping.")
         except Exception as e:
-            print(f"  [WARNING] Failed to load '{comp}' models: {e} — skipping.")
+            print(f"  [WARNING] Failed to load '{comp}' models: {e}")
 
-    print(f"\nVexis ML: {loaded_count}/{len(components)} component models loaded successfully.")
+    # Load calibration bounds
+    bounds_path = os.path.join(models_path, 'calibration_bounds.json')
+    if os.path.exists(bounds_path):
+        with open(bounds_path, 'r') as f:
+            CALIBRATION.update(json.load(f))
+        print(f"  Loaded calibration bounds for {len(CALIBRATION)} components.")
+    else:
+        print("  [WARNING] calibration_bounds.json not found — using fallback bounds.")
+        # Fallback bounds (safe defaults based on typical IF ranges)
+        for comp in components:
+            CALIBRATION[comp] = {'lower': -0.15, 'upper': 0.20}
+
+    print(f"\nVexis ML: {loaded}/{len(components)} component models loaded.")
 
 
 # ──────────────────────────────────────────────────────────────────
-# FUNCTION 2 — if_score_to_health(raw_scores)
+# FUNCTION 2 — calibrated_score(raw, comp) → 0-100
 # ──────────────────────────────────────────────────────────────────
-def if_score_to_health(raw_scores):
+def calibrated_score(raw_decision: float, comp: str) -> float:
     """
-    Convert Isolation Forest decision_function output (array of 1 value)
-    into a 0–100 health score using the same normalisation as training.
+    Map a single Isolation Forest decision_function score to 0–100
+    using pre-computed calibration bounds from training.
 
     Higher decision_function → more normal → higher health score.
     """
-    min_s = raw_scores.min()
-    max_s = raw_scores.max()
-
-    if max_s == min_s:
-        return 50.0  # flat / degenerate — return neutral score
-
-    normalized = (raw_scores - min_s) / (max_s - min_s)
-    return float(np.clip(normalized * 100, 0, 100)[0])
+    bounds = CALIBRATION.get(comp, {'lower': -0.15, 'upper': 0.20})
+    lo, hi = bounds['lower'], bounds['upper']
+    span   = hi - lo
+    if span < 1e-6:
+        return 50.0
+    score = (raw_decision - lo) / span * 100.0
+    return float(np.clip(score, 0.0, 100.0))
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -102,7 +99,8 @@ def compute_derived_features(raw_input: dict) -> dict:
     Compute all engineered features the models were trained on.
 
     Raw input keys expected:
-        rpm, speed, load, maf, stft, ltft, oat, speed_limit
+        rpm, speed, load, maf, stft, ltft,
+        oat (or coolant_temp), speed_limit
     """
     rpm         = float(raw_input.get('rpm',         0))
     speed       = float(raw_input.get('speed',       0))
@@ -110,14 +108,19 @@ def compute_derived_features(raw_input: dict) -> dict:
     maf         = float(raw_input.get('maf',         0))
     stft        = float(raw_input.get('stft',        0))
     ltft        = float(raw_input.get('ltft',        0))
-    oat         = float(raw_input.get('oat',         0))
-    speed_limit = float(raw_input.get('speed_limit', 60))  # default 60 km/h
+    # Support both 'oat' and 'coolant_temp'
+    oat         = float(raw_input.get('oat') or raw_input.get('coolant_temp') or 87)
+    speed_limit = float(raw_input.get('speed_limit', 60))
 
-    # ── Derived features ──────────────────────────────────────────
-    maf_per_rpm           = maf / rpm              if rpm   > 0 else 0.0
-    rpm_load_ratio        = rpm / load             if load  > 0 else 0.0
-    maf_per_speed         = maf / speed            if speed > 0 else 0.0
-    load_per_speed        = load / speed           if speed > 0 else 0.0
+    # Guard against division by zero
+    rpm_safe   = max(rpm,   1.0)
+    speed_safe = max(speed, 1.0)
+    load_safe  = max(load,  1.0)
+
+    maf_per_rpm           = maf / rpm_safe
+    rpm_load_ratio        = rpm / load_safe
+    maf_per_speed         = maf / speed_safe if speed > 0 else 0.0
+    load_per_speed        = load / speed_safe if speed > 0 else 0.0
     maf_speed_deviation   = abs(maf_per_speed - maf_per_rpm)
     fuel_trim_combined    = stft + ltft
     fuel_trim_abs         = abs(stft) + abs(ltft)
@@ -127,9 +130,7 @@ def compute_derived_features(raw_input: dict) -> dict:
     maf_temp_adjusted     = maf * (1 + oat / 100.0)
     gradient_speed_stress = (rpm / 1000.0) * (speed / 100.0)
 
-    # ── Merge raw + derived ───────────────────────────────────────
-    full = {
-        # raw
+    return {
         'rpm':                  rpm,
         'speed':                speed,
         'load':                 load,
@@ -138,7 +139,6 @@ def compute_derived_features(raw_input: dict) -> dict:
         'ltft':                 ltft,
         'oat':                  oat,
         'speed_limit':          speed_limit,
-        # derived
         'maf_per_rpm':          maf_per_rpm,
         'rpm_load_ratio':       rpm_load_ratio,
         'maf_per_speed':        maf_per_speed,
@@ -152,7 +152,6 @@ def compute_derived_features(raw_input: dict) -> dict:
         'maf_temp_adjusted':    maf_temp_adjusted,
         'gradient_speed_stress': gradient_speed_stress,
     }
-    return full
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -160,88 +159,66 @@ def compute_derived_features(raw_input: dict) -> dict:
 # ──────────────────────────────────────────────────────────────────
 def predict_health(raw_input: dict) -> dict:
     """
-    Run all 5 Isolation Forest models on a single OBD reading and
-    return component scores, overall score, health category, and issues.
+    Run all 5 Isolation Forest models on a single OBD reading.
 
-    Args:
-        raw_input: dict with keys rpm, speed, load, maf, stft, ltft,
-                   oat, speed_limit
+    Uses calibrated bounds (not min/max normalization) so every
+    single-row prediction is meaningful without batch context.
 
-    Returns:
-        dict with engine_score, fuel_score, efficiency_score,
-        driving_score, thermal_score, overall_score, health_category,
-        issues, component_weights  —  or {"error": str} on failure.
+    Returns a dict with component scores, overall score, health
+    category, and detected issues — or {"error": str} on failure.
     """
     try:
-        # ── Step 1: compute all features ─────────────────────────
         full_features = compute_derived_features(raw_input)
 
-        # ── Step 2: score each component ─────────────────────────
         component_scores = {}
 
         for comp, feature_cols in COMPONENT_FEATURES.items():
             if comp not in MODELS or f'scaler_{comp}' not in MODELS:
-                # Model not loaded — assign neutral score
-                component_scores[comp] = 50.0
+                component_scores[comp] = 50.0   # model not loaded — neutral
                 continue
 
-            # Extract only this component's columns into a 1-row DataFrame
+            # Build 1-row DataFrame with exact feature order
             row = {col: full_features.get(col, 0.0) for col in feature_cols}
-            df  = pd.DataFrame([row], columns=feature_cols)
+            df  = pd.DataFrame([row], columns=feature_cols).fillna(0.0)
 
-            # Handle any NaN values
-            df = df.fillna(0.0)
+            # Scale → predict (use .values to avoid sklearn feature-name warning)
+            scaled    = MODELS[f'scaler_{comp}'].transform(df.values)
+            raw_score = float(MODELS[comp].decision_function(scaled)[0])
 
-            # Scale
-            scaled = MODELS[f'scaler_{comp}'].transform(df)
+            # Map to 0-100 using calibrated bounds (fixes the 50.0 bug)
+            component_scores[comp] = calibrated_score(raw_score, comp)
 
-            # Isolation Forest anomaly score → health score
-            raw_scores            = MODELS[comp].decision_function(scaled)
-            component_scores[comp] = if_score_to_health(raw_scores)
-
-        # ── Step 3: weighted overall score ───────────────────────
+        # Weighted overall score
         overall_score = sum(
             COMPONENT_WEIGHTS[c] * component_scores[c]
             for c in COMPONENT_WEIGHTS
         )
         overall_score = round(float(np.clip(overall_score, 0, 100)), 2)
 
-        # ── Step 4: health category ───────────────────────────────
-        if overall_score >= 90:
-            health_category = "Excellent"
-        elif overall_score >= 75:
-            health_category = "Good"
-        elif overall_score >= 60:
-            health_category = "Fair"
-        elif overall_score >= 40:
-            health_category = "Poor"
-        else:
-            health_category = "Critical"
+        # Health category
+        if overall_score >= 90:   health_category = "Excellent"
+        elif overall_score >= 75: health_category = "Good"
+        elif overall_score >= 60: health_category = "Fair"
+        elif overall_score >= 40: health_category = "Poor"
+        else:                     health_category = "Critical"
 
-        # ── Step 5: issue detection ───────────────────────────────
+        # Issue detection (rule-based on component scores)
         issues = []
-
-        if component_scores.get('engine', 100) < 60:
-            issues.append("Engine anomaly detected")
-        if component_scores.get('fuel', 100) < 60:
-            issues.append("Fuel system irregularity")
-        if component_scores.get('efficiency', 100) < 60:
-            issues.append("Efficiency degradation")
-        if component_scores.get('driving', 100) < 60:
-            issues.append("Aggressive driving patterns")
-        if component_scores.get('thermal', 100) < 60:
-            issues.append("Thermal stress detected")
+        if component_scores.get('engine',     100) < 60: issues.append("Engine anomaly detected")
+        if component_scores.get('fuel',       100) < 60: issues.append("Fuel system irregularity")
+        if component_scores.get('efficiency', 100) < 60: issues.append("Efficiency degradation")
+        if component_scores.get('driving',    100) < 60: issues.append("Aggressive driving patterns")
+        if component_scores.get('thermal',    100) < 60: issues.append("Thermal stress detected")
 
         stft = float(raw_input.get('stft', 0))
         ltft = float(raw_input.get('ltft', 0))
         if not (-10 <= stft <= 10) or not (-10 <= ltft <= 10):
             issues.append("Fuel trim imbalance")
 
-        oat = float(raw_input.get('oat', 0))
-        if oat > 90:
-            issues.append("High coolant/ambient temperature")
+        oat = float(raw_input.get('oat') or raw_input.get('coolant_temp') or 0)
+        if oat > 100:
+            issues.append("High coolant temperature")
 
-        # ── Step 6: return result dict ────────────────────────────
         return {
             "engine_score":      round(component_scores.get('engine',     50.0), 2),
             "fuel_score":        round(component_scores.get('fuel',       50.0), 2),
