@@ -24,8 +24,8 @@ if (!firebaseUser.emailVerified) {
   window.location.href = 'login.html';
   throw new Error('Email not verified');
 }
-// Verified — ensure user exists in backend DB
-await syncWithBackend(firebaseUser).catch(() => {});
+// Verified — sync with backend DB in the background (no await — never blocks render)
+syncWithBackend(firebaseUser).catch(() => {});
 
 // ── DOM refs ───────────────────────────────────────────────────────
 const contentArea   = document.getElementById('content-area');

@@ -105,6 +105,7 @@ export function waitForUser() {
  * syncWithBackend(user)
  * Sends the Firebase ID token to /api/auth/verify-token
  * so the backend can upsert the user in PostgreSQL.
+ * Has an 8s timeout so a slow/cold Render instance never freezes the page.
  */
 export async function syncWithBackend(user) {
   try {
@@ -116,23 +117,31 @@ export async function syncWithBackend(user) {
       ? 'http://localhost:5000/api'
       : 'https://vexis-backend-kklg.onrender.com/api';
 
+    // Abort if backend takes > 8 seconds (Render cold-start protection)
+    const controller = new AbortController();
+    const timeoutId  = setTimeout(() => controller.abort(), 8000);
+
     const res = await fetch(`${API_BASE}/auth/verify-token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token })
+      body: JSON.stringify({ token }),
+      signal: controller.signal
     });
+    clearTimeout(timeoutId);
+
     const data = await res.json();
     if (data.success) {
       // Cache user info locally for display (non-sensitive)
       localStorage.setItem('vexis_user', JSON.stringify({
-        uid: data.user.uid,
-        name: data.user.name || user.displayName || 'User',
+        uid:   data.user.uid,
+        name:  data.user.name  || user.displayName || 'User',
         email: data.user.email || user.email
       }));
     }
     return data;
   } catch (e) {
-    console.warn('[VEXIS] Backend sync failed:', e);
+    // AbortError = timeout, network error, or backend down — all acceptable
+    console.warn('[VEXIS] Backend sync skipped:', e.name === 'AbortError' ? 'timeout' : e.message);
     return null;
   }
 }
