@@ -45,7 +45,7 @@ def score_info(s):
     return              ('CRITICAL', RED,   '#f87171')
 
 
-def ps(name, **kw):
+def ps(name='custom', **kw):
     return ParagraphStyle(name, **kw)
 
 
