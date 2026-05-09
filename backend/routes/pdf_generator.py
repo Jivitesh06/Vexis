@@ -129,11 +129,13 @@ class EnhancedProgressBar(Flowable):
         fw = max((self.score/100)*self.width, h)
         c.setFillColor(self.color)
         c.roundRect(0, 0, fw, h, h/2, fill=1, stroke=0)
-        # Gloss
+        # Gloss highlight
         if fw > 20:
+            c.saveState()
             c.setFillColor(WHITE)
-            c.setFillAlpha(0.35)
+            c.setFillAlpha(0.30)
             c.roundRect(2, h*0.55, fw-6, h*0.35, h*0.2, fill=1, stroke=0)
+            c.restoreState()
 
 
 class SectionHeader(Flowable):
