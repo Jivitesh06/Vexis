@@ -18,7 +18,7 @@ def get_db():
         user=Config.DB_USER,
         password=Config.DB_PASSWORD,
         sslmode=ssl_mode,
-        connect_timeout=20,
+        connect_timeout=5,      # fail fast — don't block for 20s per attempt
         # TCP keepalive — prevents SSL drop on idle connections
         keepalives=1,
         keepalives_idle=30,
@@ -124,7 +124,7 @@ def init_db():
 # (handles Neon / Render PostgreSQL cold-starts)
 # ──────────────────────────────────────────────
 def execute_query(query, params=(), fetchone=False, fetchall=False, commit=False):
-    MAX_RETRIES = 3
+    MAX_RETRIES = 2  # 2 retries × 5s timeout = max 10s blocked, not 3 min
     last_error  = None
 
     for attempt in range(1, MAX_RETRIES + 1):
