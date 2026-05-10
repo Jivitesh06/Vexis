@@ -1,133 +1,105 @@
+"""
+auth.py — Firestore-only authentication routes
+No PostgreSQL dependency.
+"""
 from flask import Blueprint, request, jsonify
-from utils.firebase_auth import (
-    firebase_required,
-    verify_firebase_token,
-    get_or_create_user,
-    init_firebase
-)
-from database import execute_query
+from utils.firebase_auth import firebase_required, verify_firebase_token, init_firebase
+from datetime import datetime
 
 auth_bp = Blueprint('auth', __name__)
-
-# Initialize Firebase on import
 init_firebase()
 
+
+def _db():
+    from firebase_admin import firestore
+    return firestore.client()
+
+
+# ── POST /api/auth/verify-token ──────────────────────────────────────────
 @auth_bp.route('/verify-token', methods=['POST'])
 def verify_token():
     try:
-        data = request.get_json() or {}
+        data  = request.get_json() or {}
         token = data.get('token')
-        
         if not token:
             return jsonify({"error": "Token required"}), 400
-        
+
         user = verify_firebase_token(token)
         if not user:
             return jsonify({"error": "Invalid token"}), 401
-        
-        # Try to get/create in PostgreSQL — DB may be unavailable
-        try:
-            db_user = get_or_create_user(user['uid'], user['email'], user['name'])
-        except Exception as db_err:
-            print(f"[WARN] DB unavailable in verify-token: {db_err}")
-            db_user = None
 
-        if db_user:
-            return jsonify({
-                "success": True,
-                "user": {
-                    "id":             db_user['id'],
-                    "uid":            user['uid'],
-                    "email":          user['email'],
-                    "name":           user['name'],
-                    "email_verified": user['email_verified']
-                }
-            }), 200
-        else:
-            # DB down — still acknowledge valid Firebase token
-            return jsonify({
-                "success": True,
-                "user": {
-                    "id":             None,
-                    "uid":            user['uid'],
-                    "email":          user['email'],
-                    "name":           user['name'],
-                    "email_verified": user['email_verified']
-                }
-            }), 200
+        # Upsert basic profile in Firestore (best-effort)
+        try:
+            db = _db()
+            db.collection('users').document(user['uid']).set({
+                'email':      user['email'],
+                'name':       user.get('name', ''),
+                'last_login': datetime.utcnow().isoformat(),
+            }, merge=True)
+        except Exception as fs_err:
+            print(f"[WARN] Firestore profile upsert failed: {fs_err}")
+
+        return jsonify({
+            "success": True,
+            "user": {
+                "uid":            user['uid'],
+                "email":          user['email'],
+                "name":           user.get('name', ''),
+                "email_verified": user['email_verified'],
+            }
+        }), 200
 
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+
+# ── GET /api/auth/me ─────────────────────────────────────────────────────
 @auth_bp.route('/me', methods=['GET'])
 @firebase_required
 def get_me():
-    """
-    Get current user info.
-    request.user is set by decorator.
-    """
-    user = request.user
-    
-    db_user = execute_query(
-        "SELECT * FROM users WHERE firebase_uid = %s",
-        (user['uid'],),
-        fetchone=True
-    )
-    
-    if not db_user:
-        return jsonify({
-            "error": "User not found"
-        }), 404
-    
-    return jsonify({
-        "user": {
-            "id": db_user['id'],
-            "uid": user['uid'],
-            "email": user['email'],
-            "name": user['name'],
-            "email_verified": user['email_verified'],
-            "profile_photo_url": db_user.get('profile_photo_url', ''),
-            "alternate_contact": db_user.get('alternate_contact', ''),
-            "created_at": str(db_user['created_at'])
-        }
-    }), 200
-
-@auth_bp.route('/profile', methods=['PUT'])
-@firebase_required
-def update_profile():
-    """
-    Update user profile information.
-    """
-    user = request.user
-    data = request.get_json() or {}
-    
-    name = data.get('name')
-    profile_photo_url = data.get('profile_photo_url')
-    alternate_contact = data.get('alternate_contact')
-    
-    update_fields = []
-    params = []
-    
-    if name is not None:
-        update_fields.append("name = %s")
-        params.append(name)
-    if profile_photo_url is not None:
-        update_fields.append("profile_photo_url = %s")
-        params.append(profile_photo_url)
-    if alternate_contact is not None:
-        update_fields.append("alternate_contact = %s")
-        params.append(alternate_contact)
-        
-    if not update_fields:
-        return jsonify({"error": "No fields to update"}), 400
-        
-    query = "UPDATE users SET " + ", ".join(update_fields) + " WHERE firebase_uid = %s"
-    params.append(user['uid'])
-    
     try:
-        execute_query(query, tuple(params), commit=True)
-        return jsonify({"success": True, "message": "Profile updated"}), 200
+        user = request.user
+        db   = _db()
+        doc  = db.collection('users').document(user['uid']).get()
+        profile = doc.to_dict() if doc.exists else {}
+
+        return jsonify({
+            "user": {
+                "uid":               user['uid'],
+                "email":             user['email'],
+                "name":              profile.get('name', user.get('name', '')),
+                "email_verified":    user['email_verified'],
+                "profile_photo_url": profile.get('profile_photo_url', ''),
+                "alternate_contact": profile.get('alternate_contact', ''),
+                "created_at":        profile.get('created_at', ''),
+            }
+        }), 200
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+# ── PUT /api/auth/profile ────────────────────────────────────────────────
+@auth_bp.route('/profile', methods=['PUT'])
+@firebase_required
+def update_profile():
+    try:
+        user = request.user
+        data = request.get_json() or {}
+
+        update = {}
+        for field in ('name', 'profile_photo_url', 'alternate_contact'):
+            if field in data:
+                update[field] = data[field]
+
+        if not update:
+            return jsonify({"error": "No fields to update"}), 400
+
+        update['updated_at'] = datetime.utcnow().isoformat()
+        _db().collection('users').document(user['uid']).set(update, merge=True)
+
+        return jsonify({"success": True, "message": "Profile updated"}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500

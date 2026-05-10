@@ -6,7 +6,6 @@ import os
 # flask_cors removed — CORS handled manually via after_request + before_request hooks below
 from flask_socketio import SocketIO, emit
 from config import Config
-from database import init_db
 from ml.model_loader import load_models, MODELS
 from routes.auth import auth_bp
 from routes.predict import predict_bp
@@ -202,12 +201,7 @@ print("=" * 50)
 print(" VEXIS API SERVER STARTING...")
 print("=" * 50)
 
-try:
-    init_db()
-    print("Database initialized successfully")
-except Exception as e:
-    print(f"Database init failed: {e}")
-    print("App will continue without DB - check credentials")
+
 load_models()
 
 # ──────────────────────────────────────────────────────────────────

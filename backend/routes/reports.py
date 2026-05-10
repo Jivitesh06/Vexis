@@ -1,15 +1,18 @@
+"""
+reports.py — Firestore-only report management
+No PostgreSQL dependency.
+"""
 from flask import Blueprint, request, jsonify, make_response
-from utils.firebase_auth import firebase_required, get_or_create_user
-from database import execute_query
-from reportlab.lib.pagesizes import letter
-from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet
-import json
-import io
+from utils.firebase_auth import firebase_required
 from datetime import datetime
+import base64
 
 reports_bp = Blueprint('reports', __name__)
+
+
+def _db():
+    from firebase_admin import firestore
+    return firestore.client()
 
 
 def _score_label(score):
@@ -22,80 +25,52 @@ def _score_label(score):
     return "Critical"
 
 
-def _get_user_id(uid, email):
-    """Get DB user_id — returns None if DB unavailable."""
-    try:
-        db_user = get_or_create_user(uid, email)
-        return db_user['id'] if db_user else None
-    except Exception as e:
-        print(f"[WARN] DB unavailable: {e}")
-        return None
-
-
-# ─────────────────────────────────────────────────────────────────
-# GET /reports
-# Optional ?vehicle_name=X  for per-vehicle filter
-# ─────────────────────────────────────────────────────────────────
+# ── GET /api/reports ─────────────────────────────────────────────────────
 @reports_bp.route('/reports', methods=['GET'])
 @firebase_required
 def get_reports():
     try:
-        user_id = _get_user_id(request.user['uid'], request.user['email'])
-        if user_id is None:
-            return jsonify({"success": True, "reports": [], "count": 0,
-                            "warning": "Database unavailable"}), 200
+        uid          = request.user['uid']
+        db           = _db()
+        vehicle_filter = request.args.get('vehicle_name', '').strip().lower()
 
-        vehicle_filter = request.args.get('vehicle_name', '').strip()
-
-        if vehicle_filter:
-            rows = execute_query(
-                """SELECT id, timestamp, overall_score, status_label,
-                          engine_score, fuel_score, stress_score,
-                          failure_risk, raw_input, issues
-                   FROM reports
-                   WHERE user_id = %s AND raw_input::text ILIKE %s
-                   ORDER BY timestamp DESC""",
-                (user_id, f'%{vehicle_filter}%'),
-                fetchall=True
-            )
-        else:
-            rows = execute_query(
-                """SELECT id, timestamp, overall_score, status_label,
-                          engine_score, fuel_score, stress_score,
-                          failure_risk, raw_input, issues
-                   FROM reports
-                   WHERE user_id = %s
-                   ORDER BY timestamp DESC""",
-                (user_id,),
-                fetchall=True
-            )
+        docs = db.collection('users').document(uid)\
+                 .collection('reports')\
+                 .order_by('timestamp', direction='DESCENDING')\
+                 .limit(50)\
+                 .stream()
 
         reports = []
-        for row in (rows or []):
-            raw, issues = {}, []
-            try:
-                raw = json.loads(row['raw_input']) if row['raw_input'] else {}
-            except Exception:
-                pass
-            try:
-                issues = json.loads(row['issues']) if row['issues'] else []
-            except Exception:
-                pass
+        for doc in docs:
+            d = doc.to_dict()
+            # Filter by vehicle name if requested
+            vname = (d.get('vehicle_name') or '').lower()
+            if vehicle_filter and vehicle_filter not in vname:
+                continue
+
+            # Normalize timestamp
+            ts = d.get('timestamp', '')
+            if hasattr(ts, 'isoformat'):
+                ts = ts.isoformat()
 
             reports.append({
-                "id":            row['id'],
-                "timestamp":     str(row['timestamp']),
-                "overall_score": float(row['overall_score'] or 0),
-                "status_label":  row['status_label'] or _score_label(row['overall_score']),
-                "engine_score":  float(row['engine_score'] or 0),
-                "fuel_score":    float(row['fuel_score']   or 0),
-                "stress_score":  float(row['stress_score'] or 0),
-                "failure_risk":  bool(row['failure_risk']),
-                "vehicle_name":  raw.get('vehicle_name') or raw.get('vehicle'),
-                "vehicle_model": raw.get('vehicle_model'),
-                "vehicle_id":    raw.get('vehicle_id'),
-                "source":        raw.get('source', 'live_obd'),
-                "issues":        issues,
+                "id":            doc.id,
+                "timestamp":     ts,
+                "overall_score": float(d.get('overall_score') or 0),
+                "status_label":  d.get('status_label') or _score_label(d.get('overall_score')),
+                "engine_score":  float(d.get('engine_score')  or 0),
+                "fuel_score":    float(d.get('fuel_score')    or 0),
+                "efficiency_score": float(d.get('efficiency_score') or 0),
+                "driving_score": float(d.get('driving_score') or 0),
+                "thermal_score": float(d.get('thermal_score') or 0),
+                "failure_risk":  bool(d.get('failure_risk')),
+                "vehicle_name":  d.get('vehicle_name'),
+                "vehicle_model": d.get('vehicle_model'),
+                "vehicle_id":    d.get('vehicle_id'),
+                "source":        d.get('source', 'csv_upload'),
+                "issues":        d.get('issues', []),
+                "quality":       d.get('quality', ''),
+                "has_pdf":       bool(d.get('pdf_base64')),
             })
 
         return jsonify({"success": True, "reports": reports, "count": len(reports)}), 200
@@ -105,28 +80,59 @@ def get_reports():
         return jsonify({"error": str(e)}), 500
 
 
-# ─────────────────────────────────────────────────────────────────
-# DELETE /reports/<id>
-# ─────────────────────────────────────────────────────────────────
-@reports_bp.route('/reports/<int:report_id>', methods=['DELETE'])
+# ── GET /api/reports/<id> ────────────────────────────────────────────────
+@reports_bp.route('/reports/<string:report_id>', methods=['GET'])
+@firebase_required
+def get_report(report_id):
+    try:
+        uid = request.user['uid']
+        db  = _db()
+        doc = db.collection('users').document(uid)\
+                .collection('reports').document(report_id).get()
+
+        if not doc.exists:
+            return jsonify({"error": "Report not found"}), 404
+
+        d  = doc.to_dict()
+        ts = d.get('timestamp', '')
+        if hasattr(ts, 'isoformat'):
+            ts = ts.isoformat()
+
+        return jsonify({"success": True, "report": {
+            "id":            doc.id,
+            "timestamp":     ts,
+            "overall_score": float(d.get('overall_score') or 0),
+            "engine_score":  float(d.get('engine_score')  or 0),
+            "fuel_score":    float(d.get('fuel_score')    or 0),
+            "efficiency_score": float(d.get('efficiency_score') or 0),
+            "driving_score": float(d.get('driving_score') or 0),
+            "thermal_score": float(d.get('thermal_score') or 0),
+            "failure_risk":  bool(d.get('failure_risk')),
+            "status_label":  d.get('status_label'),
+            "issues":        d.get('issues', []),
+            "vehicle_name":  d.get('vehicle_name'),
+            "vehicle_model": d.get('vehicle_model'),
+            "has_pdf":       bool(d.get('pdf_base64')),
+        }}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ── DELETE /api/reports/<id> ─────────────────────────────────────────────
+@reports_bp.route('/reports/<string:report_id>', methods=['DELETE'])
 @firebase_required
 def delete_report(report_id):
     try:
-        user_id = _get_user_id(request.user['uid'], request.user['email'])
-        if user_id is None:
-            return jsonify({"error": "Database unavailable"}), 503
+        uid = request.user['uid']
+        db  = _db()
+        ref = db.collection('users').document(uid)\
+                .collection('reports').document(report_id)
 
-        existing = execute_query(
-            "SELECT id FROM reports WHERE id = %s AND user_id = %s",
-            (report_id, user_id), fetchone=True
-        )
-        if not existing:
+        if not ref.get().exists:
             return jsonify({"error": "Report not found"}), 404
 
-        execute_query(
-            "DELETE FROM reports WHERE id = %s AND user_id = %s",
-            (report_id, user_id), commit=True
-        )
+        ref.delete()
         return jsonify({"success": True, "message": "Report deleted"}), 200
 
     except Exception as e:
@@ -134,152 +140,34 @@ def delete_report(report_id):
         return jsonify({"error": str(e)}), 500
 
 
-# ─────────────────────────────────────────────────────────────────
-# GET /reports/<id>
-# ─────────────────────────────────────────────────────────────────
-@reports_bp.route('/reports/<int:report_id>', methods=['GET'])
-@firebase_required
-def get_report(report_id):
-    try:
-        user_id = _get_user_id(request.user['uid'], request.user['email'])
-        if user_id is None:
-            return jsonify({"error": "Database unavailable"}), 503
-
-        report = execute_query(
-            "SELECT * FROM reports WHERE id = %s AND user_id = %s",
-            (report_id, user_id), fetchone=True
-        )
-        if not report:
-            return jsonify({"error": "Report not found"}), 404
-
-        raw = report['raw_input']
-        issues = report['issues']
-        if isinstance(raw, str):    raw    = json.loads(raw)
-        if isinstance(issues, str): issues = json.loads(issues)
-
-        return jsonify({"success": True, "report": {
-            "id":            report['id'],
-            "timestamp":     str(report['timestamp']),
-            "overall_score": float(report['overall_score'] or 0),
-            "engine_score":  float(report['engine_score']  or 0),
-            "fuel_score":    float(report['fuel_score']    or 0),
-            "stress_score":  float(report['stress_score']  or 0),
-            "failure_risk":  bool(report['failure_risk']),
-            "status_label":  report['status_label'],
-            "raw_input":     raw,
-            "issues":        issues
-        }}), 200
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-# ─────────────────────────────────────────────────────────────────
-# GET /reports/download/<id>
-# ─────────────────────────────────────────────────────────────────
-@reports_bp.route('/reports/download/<int:report_id>', methods=['GET'])
+# ── GET /api/reports/download/<id> ──────────────────────────────────────
+@reports_bp.route('/reports/download/<string:report_id>', methods=['GET'])
 @firebase_required
 def download_report(report_id):
+    """Return the stored premium PDF for a given report."""
     try:
-        user_id = _get_user_id(request.user['uid'], request.user['email'])
-        if user_id is None:
-            return jsonify({"error": "Database unavailable"}), 503
+        uid = request.user['uid']
+        db  = _db()
+        doc = db.collection('users').document(uid)\
+                .collection('reports').document(report_id).get()
 
-        report = execute_query(
-            "SELECT * FROM reports WHERE id = %s AND user_id = %s",
-            (report_id, user_id), fetchone=True
-        )
-        if not report:
-            return jsonify({"error": "Not found"}), 404
+        if not doc.exists:
+            return jsonify({"error": "Report not found"}), 404
 
-        issues = report['issues']
-        raw    = report['raw_input']
-        if isinstance(issues, str): issues = json.loads(issues)
-        if isinstance(raw, str):    raw    = json.loads(raw)
-        if not isinstance(raw, dict): raw  = {}
+        d = doc.to_dict()
+        pdf_b64 = d.get('pdf_base64')
 
-        vehicle_name  = raw.get('vehicle_name') or raw.get('vehicle', 'Unknown Vehicle')
-        vehicle_model = raw.get('vehicle_model', '')
-        source        = raw.get('source', 'live_obd')
+        if not pdf_b64:
+            return jsonify({"error": "PDF not available for this report"}), 404
 
-        engine_score  = float(report['engine_score']  or 0)
-        fuel_score    = float(report['fuel_score']    or 0)
-        driving_score = float(report['stress_score']  or 0)
-        overall_score = float(report['overall_score'] or 0)
-
-        buffer = io.BytesIO()
-        doc    = SimpleDocTemplate(buffer, pagesize=letter,
-                                   rightMargin=50, leftMargin=50,
-                                   topMargin=60, bottomMargin=40)
-        styles = getSampleStyleSheet()
-        story  = []
-
-        story.append(Paragraph("VEXIS — Vehicle Health Report", styles['Title']))
-        story.append(Spacer(1, 4))
-        veh_str = vehicle_name + (f" — {vehicle_model}" if vehicle_model else "")
-        story.append(Paragraph(f"Vehicle: <b>{veh_str}</b>", styles['Normal']))
-        src_str = "CSV Upload" if 'csv' in source else "Live OBD Scan"
-        story.append(Paragraph(
-            f"Source: {src_str}  |  Generated: {datetime.now().strftime('%d %b %Y, %H:%M')}",
-            styles['Normal']
-        ))
-        story.append(Spacer(1, 20))
-
-        story.append(Paragraph("<b>Health Summary</b>", styles['Heading2']))
-        story.append(Spacer(1, 8))
-        summary_data = [
-            ["Component",     "Score",                  "Status"],
-            ["Engine",        f"{engine_score:.1f}",    _score_label(engine_score)],
-            ["Fuel System",   f"{fuel_score:.1f}",      _score_label(fuel_score)],
-            ["Driving",       f"{driving_score:.1f}",   _score_label(driving_score)],
-            ["Overall Score", f"{overall_score:.1f}",   report['status_label'] or "N/A"],
-        ]
-        table = Table(summary_data, colWidths=[180, 120, 150])
-        table.setStyle(TableStyle([
-            ('BACKGROUND',    (0,0), (-1,0), colors.black),
-            ('TEXTCOLOR',     (0,0), (-1,0), colors.white),
-            ('FONTNAME',      (0,0), (-1,0), 'Helvetica-Bold'),
-            ('FONTSIZE',      (0,0), (-1,-1), 10),
-            ('ALIGN',         (0,0), (-1,-1), 'CENTER'),
-            ('VALIGN',        (0,0), (-1,-1), 'MIDDLE'),
-            ('TOPPADDING',    (0,0), (-1,-1), 8),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 8),
-            ('GRID',          (0,0), (-1,-1), 0.5, colors.grey),
-            ('ROWBACKGROUNDS',(0,1), (-1,-1), [colors.whitesmoke, colors.lightgrey]),
-        ]))
-        story.append(table)
-        story.append(Spacer(1, 20))
-
-        story.append(Paragraph("<b>Detected Issues</b>", styles['Heading2']))
-        story.append(Spacer(1, 8))
-        if issues:
-            for issue in issues:
-                story.append(Paragraph(f"• {issue}", styles['Normal']))
-                story.append(Spacer(1, 4))
-        else:
-            story.append(Paragraph("No issues detected. Vehicle in good health.", styles['Normal']))
-
-        story.append(Spacer(1, 20))
-        story.append(Paragraph("<b>Risk Assessment</b>", styles['Heading2']))
-        story.append(Spacer(1, 8))
-        story.append(Paragraph(
-            f"Failure Risk: <b>{'At Risk' if report['failure_risk'] else 'Healthy'}</b>",
-            styles['Normal']
-        ))
-        story.append(Paragraph(
-            f"Overall Status: <b>{report['status_label'] or 'N/A'}</b>",
-            styles['Normal']
-        ))
-
-        doc.build(story)
-        pdf_bytes = buffer.getvalue()
-        buffer.close()
+        pdf_bytes = base64.b64decode(pdf_b64)
+        vname     = (d.get('vehicle_name') or 'report').replace(' ', '_')
 
         resp = make_response(pdf_bytes)
         resp.headers['Content-Type']        = 'application/pdf'
-        resp.headers['Content-Disposition'] = f'attachment; filename=vexis_report_{report_id}.pdf'
+        resp.headers['Content-Disposition'] = f'attachment; filename=vexis_{vname}_{report_id[:8]}.pdf'
         return resp
 
     except Exception as e:
         import traceback; traceback.print_exc()
-        return jsonify({"error": "PDF generation failed"}), 500
+        return jsonify({"error": "PDF download failed"}), 500
