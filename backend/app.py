@@ -1,5 +1,5 @@
 import eventlet
-eventlet.monkey_patch()
+eventlet.monkey_patch(os=True, select=True, socket=True, thread=False, time=True)
 
 from flask import Flask, jsonify, request, send_from_directory
 import os
