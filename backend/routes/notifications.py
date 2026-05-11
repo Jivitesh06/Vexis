@@ -3,12 +3,34 @@ Vexis Notification Blueprint
 REST endpoints for notification preferences and test emails.
 """
 from flask import Blueprint, request, jsonify
+import os
 from utils.firebase_auth import firebase_required
 from utils.email_sender import send_email
 from utils.email_templates import build_health_email
 from datetime import datetime
 
 notifications_bp = Blueprint('notifications', __name__)
+
+# ── GET /api/notifications/trigger-cron ─────────────────────────────────
+@notifications_bp.route('/notifications/trigger-cron', methods=['GET'])
+def trigger_cron_endpoint():
+    """
+    Secure endpoint to trigger the daily cron job via external services (cron-job.org).
+    Requires a secret token to prevent unauthorized execution.
+    """
+    secret = request.args.get('secret')
+    expected_secret = os.getenv('CRON_SECRET', 'vexis-secret-cron-key')
+    
+    if secret != expected_secret:
+        return jsonify({'error': 'Unauthorized'}), 401
+        
+    try:
+        from cron_notifications import run_cron
+        # Run it synchronously since it only takes a few seconds
+        run_cron()
+        return jsonify({'success': True, 'message': 'Cron job executed successfully.'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 # ── GET /api/notifications/preferences ──────────────────────────────────
