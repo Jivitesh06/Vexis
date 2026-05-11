@@ -1123,6 +1123,167 @@ function wireOBDHandlers() {
 // ══════════════════════════════════════════════════════════════════
 //  MAIN — renderDashboard
 // ══════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════
+//  SERVICE INTELLIGENCE CARD — AI Timeline + Degradation Forecast
+// ══════════════════════════════════════════════════════════════════
+function renderServiceIntelligence(tl) {
+  if (!tl) {
+    return `
+    <div class="glass-card reveal" style="padding:28px;margin-bottom:20px;border:1px solid rgba(0,229,255,0.1)">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:12px">
+        <div style="width:38px;height:38px;border-radius:10px;background:rgba(0,229,255,0.1);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg viewBox="0 0 24 24" fill="none" width="20" height="20"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#00e5ff" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </div>
+        <div>
+          <div style="font-family:var(--font-display);font-size:15px;font-weight:700;color:var(--text)">Service Intelligence</div>
+          <div style="font-size:12px;color:var(--muted)">AI-powered predictive maintenance</div>
+        </div>
+      </div>
+      <div style="padding:16px;background:rgba(255,255,255,0.03);border-radius:var(--radius);border:1px dashed rgba(255,255,255,0.08);text-align:center">
+        <div style="font-size:13px;color:var(--muted)">Run a vehicle health scan to unlock predictive service timelines</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.3);margin-top:6px">Upload a CSV or connect OBD scanner → Run Analysis</div>
+      </div>
+    </div>`;
+  }
+
+  const pred    = tl.prediction || {};
+  const tier    = tl.tier || 'GOOD';
+  const score   = Math.round(tl.overall_score || 75);
+  const tierColors = { CRITICAL:'#ef4444', POOR:'#f97316', FAIR:'#fbbf24', GOOD:'#22c55e', EXCELLENT:'#22d3ee' };
+  const tColor  = tierColors[tier] || '#22d3ee';
+  const trend   = pred.trend || 'stable';
+  const trendIcon = trend === 'declining' ? '↓' : trend === 'improving' ? '↑' : '→';
+  const trendColor = trend === 'declining' ? '#ef4444' : trend === 'improving' ? '#22c55e' : '#fbbf24';
+  const velocity = pred.velocity || 0;
+  const conf    = pred.confidence || 'LOW';
+  const confColor = {HIGH:'#22c55e', MEDIUM:'#fbbf24', LOW:'#f97316', INSUFFICIENT:'#64748b'}[conf] || '#64748b';
+
+  // Countdown display
+  function countdownBlock(days, label, color, dateStr) {
+    if (days === null || days === undefined) {
+      return `<div style="text-align:center;flex:1;padding:12px;background:rgba(255,255,255,0.03);border-radius:10px;border:1px solid rgba(255,255,255,0.06)">
+        <div style="font-size:11px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">${label}</div>
+        <div style="font-family:var(--font-display);font-size:22px;font-weight:900;color:var(--muted)">N/A</div>
+        <div style="font-size:10px;color:rgba(255,255,255,0.2);margin-top:4px">${trend === 'improving' ? 'Improving' : 'Insufficient data'}</div>
+      </div>`;
+    }
+    if (days === 0) {
+      return `<div style="text-align:center;flex:1;padding:12px;background:${color}12;border-radius:10px;border:1px solid ${color}40">
+        <div style="font-size:11px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">${label}</div>
+        <div style="font-family:var(--font-display);font-size:20px;font-weight:900;color:${color}">NOW</div>
+        <div style="font-size:10px;color:${color};margin-top:4px;font-weight:600">Service Overdue</div>
+      </div>`;
+    }
+    return `<div style="text-align:center;flex:1;padding:12px;background:${color}10;border-radius:10px;border:1px solid ${color}30">
+      <div style="font-size:11px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">${label}</div>
+      <div style="font-family:var(--font-display);font-size:28px;font-weight:900;color:${color};line-height:1">${days}</div>
+      <div style="font-size:10px;color:rgba(255,255,255,0.4);margin-top:4px">days &nbsp;·&nbsp; ${dateStr || ''}</div>
+    </div>`;
+  }
+
+  // Service recommendations
+  const recs = tl.service_recommendations || [];
+  const recRows = recs.length ? recs.map(r => {
+    const rc = r.color || '#fbbf24';
+    return `
+    <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:rgba(255,255,255,0.03);border-radius:8px;border-left:3px solid ${rc};margin-bottom:8px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;color:var(--text);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.service}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">Due by ${r.due_by || 'TBD'}</div>
+      </div>
+      <span style="background:${rc}20;color:${rc};font-size:10px;font-weight:800;padding:3px 10px;border-radius:999px;border:1px solid ${rc};white-space:nowrap;flex-shrink:0">${r.urgency}</span>
+    </div>`;
+  }).join('') : `<div style="font-size:13px;color:var(--muted);padding:12px;text-align:center">No urgent services detected</div>`;
+
+  // Top faults
+  const faults = tl.fault_timelines || [];
+  const faultRows = faults.slice(0, 3).map(f => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05)">
+      <span style="font-size:12px;color:var(--muted);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${f.issue}</span>
+      <span style="font-size:11px;font-weight:700;color:${f.color};margin-left:12px;flex-shrink:0">${f.priority_label} · ${f.repair_by}</span>
+    </div>`).join('');
+
+  return `
+  <div class="glass-card reveal" style="padding:28px;margin-bottom:20px;border:1px solid ${tColor}25;position:relative;overflow:hidden" id="service-intel-card">
+
+    <!-- Background glow -->
+    <div style="position:absolute;top:-40px;right:-40px;width:200px;height:200px;background:radial-gradient(circle,${tColor}12 0%,transparent 70%);pointer-events:none"></div>
+
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+      <div style="display:flex;align-items:center;gap:14px">
+        <div style="width:42px;height:42px;border-radius:12px;background:${tColor}15;border:1px solid ${tColor}30;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg viewBox="0 0 24 24" fill="none" width="22" height="22"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="${tColor}" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </div>
+        <div>
+          <div style="font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--text)">Service Intelligence</div>
+          <div style="font-size:12px;color:var(--muted)">${tl.vehicle_name} ${tl.vehicle_model ? '· ' + tl.vehicle_model : ''}</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="background:${tColor}20;color:${tColor};font-size:11px;font-weight:800;padding:5px 14px;border-radius:999px;border:1px solid ${tColor}40;letter-spacing:0.08em">${tier}</span>
+        <span style="background:${confColor}15;color:${confColor};font-size:10px;font-weight:600;padding:4px 10px;border-radius:999px;border:1px solid ${confColor}30">${conf} CONFIDENCE</span>
+      </div>
+    </div>
+
+    <!-- Score + Trend bar -->
+    <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;padding:16px;background:rgba(255,255,255,0.03);border-radius:12px">
+      <div style="text-align:center;flex-shrink:0">
+        <div style="font-family:var(--font-display);font-size:42px;font-weight:900;color:${tColor};line-height:1">${score}</div>
+        <div style="font-size:10px;color:var(--muted);letter-spacing:1px">/100</div>
+      </div>
+      <div style="flex:1">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <span style="font-size:12px;color:var(--muted)">Health Score</span>
+          <span style="font-size:13px;font-weight:700;color:${trendColor}">${trendIcon} ${trend.charAt(0).toUpperCase()+trend.slice(1)} ${velocity !== 0 ? '(' + (velocity > 0 ? '+' : '') + velocity.toFixed(2) + ' pts/day)' : ''}</span>
+        </div>
+        <div style="height:8px;background:rgba(255,255,255,0.06);border-radius:4px;overflow:hidden">
+          <div style="height:100%;width:${score}%;background:linear-gradient(90deg,${score<40?'#ef4444':score<60?'#f97316':score<75?'#fbbf24':'#22c55e'},${tColor});border-radius:4px;transition:width 1.2s cubic-bezier(0.34,1.2,0.64,1)"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:4px">
+          <span style="font-size:10px;color:#ef4444">Critical</span>
+          <span style="font-size:10px;color:#fbbf24">Fair</span>
+          <span style="font-size:10px;color:#22c55e">Excellent</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Prediction Countdown -->
+    <div style="margin-bottom:20px">
+      <div style="font-size:11px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:12px;font-weight:600">AI Degradation Forecast</div>
+      <div style="display:flex;gap:12px">
+        ${countdownBlock(pred.days_until_poor, 'Days Until POOR', '#f97316', pred.predicted_poor_date)}
+        ${countdownBlock(pred.days_until_critical, 'Days Until CRITICAL', '#ef4444', pred.predicted_critical_date)}
+        <div style="text-align:center;flex:1;padding:12px;background:rgba(255,255,255,0.03);border-radius:10px;border:1px solid rgba(255,255,255,0.06)">
+          <div style="font-size:11px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">Data Points</div>
+          <div style="font-family:var(--font-display);font-size:28px;font-weight:900;color:var(--accent);line-height:1">${pred.report_count || 0}</div>
+          <div style="font-size:10px;color:rgba(255,255,255,0.4);margin-top:4px">scans analysed</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Service Recommendations -->
+    <div style="margin-bottom:${faults.length ? '20px' : '0'}">
+      <div style="font-size:11px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:12px;font-weight:600">Recommended Actions</div>
+      ${recRows}
+    </div>
+
+    <!-- Top Faults -->
+    ${faultRows ? `
+    <div>
+      <div style="font-size:11px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:10px;font-weight:600">Active Fault Deadlines</div>
+      ${faultRows}
+    </div>` : ''}
+
+    <!-- Next notification -->
+    ${tl.next_notification ? `
+    <div style="margin-top:16px;padding:10px 14px;background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.2);border-radius:8px;font-size:12px;color:#93c5fd">
+      Next email reminder scheduled: <b>${tl.next_notification.slice(0,10)}</b>
+    </div>` : ''}
+
+  </div>`;
+}
+
 async function renderDashboard(container) {
   // Expose toast globally for inline onclick
   window._showToast = showToast;
@@ -1167,6 +1328,13 @@ async function renderDashboard(container) {
     }
   });
 
+  // ── Fetch Service Intelligence Timeline (non-blocking) ────────────
+  let timelineSummary = null;
+  try {
+    const tlRes = await apiGet('/dashboard/timeline-summary');
+    if (tlRes && tlRes.has_data) timelineSummary = tlRes;
+  } catch { /* timeline is optional — dashboard still works */ }
+
   // Build HTML
   container.innerHTML = `
     <div class="section-header slide-top">
@@ -1188,6 +1356,7 @@ async function renderDashboard(container) {
     ${renderLiveMetrics(metrics)}
     ${renderGraphs()}
     ${renderAlerts(issues)}
+    ${renderServiceIntelligence(timelineSummary)}
     ${renderRiskPredictions(compScores)}
     ${renderRecommendations(compScores)}
     ${renderReportButton(reportId)}

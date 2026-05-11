@@ -12,6 +12,7 @@ from routes.predict import predict_bp
 from routes.reports import reports_bp
 from routes.vehicles import vehicles_bp
 from routes.notifications import notifications_bp
+from routes.timeline import timeline_bp
 from utils.firebase_auth import firebase_required, init_firebase
 from obd_reader import (
     init_socketio, connect_obd, disconnect_obd,
@@ -76,6 +77,7 @@ app.register_blueprint(predict_bp, url_prefix='/api')
 app.register_blueprint(reports_bp,  url_prefix='/api')
 app.register_blueprint(vehicles_bp, url_prefix='/api')
 app.register_blueprint(notifications_bp, url_prefix='/api')
+app.register_blueprint(timeline_bp,      url_prefix='/api')
 
 # ──────────────────────────────────────────────────────────────────
 # Health check
