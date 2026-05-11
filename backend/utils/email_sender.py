@@ -14,11 +14,11 @@ def send_email(to_email: str, subject: str, html_body: str) -> bool:
     Requires env vars: GMAIL_SENDER, GMAIL_APP_PASSWORD
     Returns True on success, False on failure.
     """
-    sender     = os.getenv('GMAIL_SENDER')
-    app_pass   = os.getenv('GMAIL_APP_PASSWORD')
+    sender     = os.getenv('MAIL_EMAIL', os.getenv('GMAIL_SENDER'))
+    app_pass   = os.getenv('MAIL_PASSWORD', os.getenv('GMAIL_APP_PASSWORD'))
 
     if not sender or not app_pass:
-        print('[EMAIL] GMAIL_SENDER or GMAIL_APP_PASSWORD not set. Skipping.')
+        print('[EMAIL] MAIL_EMAIL or MAIL_PASSWORD not set. Skipping.')
         return False
 
     try:
