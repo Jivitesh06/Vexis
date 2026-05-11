@@ -14,20 +14,15 @@ from utils.email_templates import build_health_email
 
 load_dotenv()
 
-def init_firebase():
-    if not firebase_admin._apps:
-        cred_path = os.getenv('FIREBASE_CREDENTIALS_PATH', 'firebase-service-account.json')
-        cred = credentials.Certificate(cred_path)
-        firebase_admin.initialize_app(cred)
-        print("[CRON] Firebase initialized.")
-    return firestore.client()
+from utils.firebase_auth import init_firebase
 
 def run_cron():
     print(f"==================================================")
     print(f"[START] VEXIS CRON: Starting Notification Check at {datetime.utcnow().isoformat()}")
     print(f"==================================================")
     
-    db = init_firebase()
+    init_firebase()
+    db = firestore.client()
     now = datetime.utcnow()
     emails_sent = 0
 
