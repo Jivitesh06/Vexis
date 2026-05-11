@@ -2202,6 +2202,7 @@ async function loadSettingsSection(container) {
 
 // ── Expose renderDashboard globally for sidebar.js ─────────────────
 window.renderDashboard = renderDashboard;
+window.renderServiceIntelligence = renderServiceIntelligence;
 window.loadVehiclesSection  = loadVehiclesSection;
 window.loadReportsSection   = loadReportsSection;
 window.loadProfileSection   = loadProfileSection;

@@ -186,6 +186,9 @@ function buildHTML() {
       </div>
     </div>
 
+    <!-- Smart Intelligence Container -->
+    <div id="mr-intel-container" style="margin-top:20px;display:none;animation:slideIn 0.4s ease"></div>
+
     <!-- Analyse Button -->
     <button class="mr-btn" id="mr-btn" disabled>
       <svg viewBox="0 0 24 24" fill="none" width="16" height="16">
@@ -274,6 +277,8 @@ function wireEvents() {
     mrSub.textContent   = 'Supports .csv files — minimum 5 rows';
     btn.disabled = true; btnText.textContent = 'Select a CSV file first';
     progFill.style.width = '0%'; clearStatus();
+    const intel = document.getElementById('mr-intel-container');
+    if (intel) intel.style.display = 'none';
   }
 
   function onFile(file) {
@@ -344,7 +349,23 @@ function wireEvents() {
       setStatus('success', '✅', 'Report Downloaded!',
         `PDF for "${vehicleName}" saved. Check Past Reports to view it.`);
       toast('PDF report downloaded & saved to Past Reports!', 'success');
-      setTimeout(resetZone, 7000);
+
+      // 3. Fetch and Render Service Intelligence
+      const intelContainer = document.getElementById('mr-intel-container');
+      if (intelContainer) {
+        try {
+          const tlRes = await fetch(`${API_BASE}/dashboard/timeline-summary`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          }).then(r => r.json());
+          
+          if (tlRes && tlRes.has_data && typeof window.renderServiceIntelligence === 'function') {
+            intelContainer.innerHTML = window.renderServiceIntelligence(tlRes);
+            intelContainer.style.display = 'block';
+          }
+        } catch(e) { console.warn('Could not load service intelligence on manual page', e); }
+      }
+
+      setTimeout(resetZone, 15000); // Wait longer so they can read the intel card
 
     } catch (err) {
       const msg = err.name === 'AbortError'
