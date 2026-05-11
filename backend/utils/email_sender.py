@@ -8,18 +8,18 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 
-def send_email(to_email: str, subject: str, html_body: str) -> bool:
+def send_email(to_email: str, subject: str, html_body: str) -> tuple[bool, str]:
     """
     Send a single HTML email via Gmail SMTP.
-    Requires env vars: GMAIL_SENDER, GMAIL_APP_PASSWORD
-    Returns True on success, False on failure.
+    Requires env vars: MAIL_EMAIL, MAIL_PASSWORD
+    Returns (True, "Success") on success, (False, "Error message") on failure.
     """
     sender     = os.getenv('MAIL_EMAIL', os.getenv('GMAIL_SENDER'))
     app_pass   = os.getenv('MAIL_PASSWORD', os.getenv('GMAIL_APP_PASSWORD'))
 
     if not sender or not app_pass:
         print('[EMAIL] MAIL_EMAIL or MAIL_PASSWORD not set. Skipping.')
-        return False
+        return False, "MAIL_EMAIL or MAIL_PASSWORD environment variables are missing."
 
     try:
         msg = MIMEMultipart('alternative')
@@ -34,8 +34,8 @@ def send_email(to_email: str, subject: str, html_body: str) -> bool:
             server.sendmail(sender, to_email, msg.as_string())
 
         print(f'[EMAIL] Sent "{subject}" → {to_email}')
-        return True
+        return True, "Email sent successfully"
 
     except Exception as e:
         print(f'[EMAIL] Failed to send to {to_email}: {e}')
-        return False
+        return False, str(e)

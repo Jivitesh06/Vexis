@@ -112,11 +112,15 @@ def send_test_email():
             timeline     = sample_timeline,
         )
 
-        ok = send_email(user['email'], email_data['subject'], email_data['html'])
+        try:
+            ok, err_msg = send_email(user['email'], email_data['subject'], email_data['html'])
+        except Exception as smtp_err:
+            ok, err_msg = False, str(smtp_err)
+            
         if ok:
             return jsonify({'success': True, 'message': f'Test email sent to {user["email"]}'}), 200
         else:
-            return jsonify({'error': 'Email sending failed. Check GMAIL_SENDER and GMAIL_APP_PASSWORD env vars.'}), 500
+            return jsonify({'error': f'Email sending failed: {err_msg}'}), 500
 
     except Exception as e:
         import traceback; traceback.print_exc()
