@@ -46,10 +46,11 @@ def get_vehicle_timeline(vehicle_id):
         history_docs = db.collection('users').document(uid)\
                          .collection('reports')\
                          .where('vehicle_id', '==', vehicle_id)\
-                         .order_by('timestamp', direction='DESCENDING')\
-                         .limit(15).stream()
+                         .stream()
 
         report_history = [d.to_dict() for d in history_docs]
+        report_history.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+        report_history = report_history[:15]
 
         # ── Run degradation prediction ──────────────────────────────────────
         prediction = predict_degradation(report_history)
@@ -143,13 +144,14 @@ def dashboard_timeline_summary():
         if not worst:
             return jsonify({'success': True, 'has_data': False}), 200
 
-        # Run prediction on this vehicle's history
+        # Run prediction on this vehicle's history (sort in python to avoid index requirement)
         history_docs = db.collection('users').document(uid)\
                          .collection('reports')\
                          .where('vehicle_id', '==', worst['vehicle_id'])\
-                         .order_by('timestamp', direction='DESCENDING')\
-                         .limit(15).stream()
+                         .stream()
         report_history = [d.to_dict() for d in history_docs]
+        report_history.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+        report_history = report_history[:15]
         prediction     = predict_degradation(report_history)
         recs           = service_recommendations(worst['timeline'], prediction)
 
