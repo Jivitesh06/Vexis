@@ -92,6 +92,27 @@ def health():
         "models_count":  len(MODELS)
     }), 200
 
+
+# ──────────────────────────────────────────────────────────────────
+# Cron Job Endpoint — triggered by cron-job.org
+# Protected by X-Cron-Secret header
+# ──────────────────────────────────────────────────────────────────
+CRON_SECRET = os.environ.get('CRON_SECRET', 'vexis-cron-secret-2025')
+
+@app.route('/api/cron/run', methods=['GET', 'POST'])
+def run_cron_endpoint():
+    # Verify secret to prevent abuse
+    secret = request.headers.get('X-Cron-Secret') or request.args.get('secret', '')
+    if secret != CRON_SECRET:
+        return jsonify({"error": "Unauthorized"}), 401
+    try:
+        from cron_notifications import run_cron
+        run_cron()
+        return jsonify({"success": True, "message": "Cron job executed successfully"}), 200
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
 # ──────────────────────────────────────────────────────────────────
 # Frontend static file serving
 # ──────────────────────────────────────────────────────────────────
