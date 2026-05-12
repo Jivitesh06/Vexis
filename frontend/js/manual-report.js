@@ -443,7 +443,7 @@ function wireEvents() {
         }
       }
 
-      setTimeout(resetZone, 15000); // Wait longer so they can read the intel card
+      // Card stays visible — user must manually refresh to reset
 
     } catch (err) {
       const msg = err.name === 'AbortError'
