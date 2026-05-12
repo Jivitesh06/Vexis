@@ -23,7 +23,6 @@ def get_vehicles():
         db   = _db()
         docs = db.collection('vehicles')\
                  .where('userId', '==', uid)\
-                 .order_by('createdAt', direction='DESCENDING')\
                  .stream()
 
         vehicles = []
@@ -35,9 +34,10 @@ def get_vehicles():
                 d['created_at'] = d['createdAt'].isoformat()
             elif isinstance(d.get('createdAt'), str):
                 d['created_at'] = d['createdAt']
-            else:
-                d['created_at'] = ''
             vehicles.append(d)
+
+        # Sort vehicles in python (newest first)
+        vehicles.sort(key=lambda x: x.get('created_at', '') or '', reverse=True)
 
         return jsonify({'vehicles': vehicles}), 200
 

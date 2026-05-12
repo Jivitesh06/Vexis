@@ -49,7 +49,7 @@ def get_vehicle_timeline(vehicle_id):
                          .stream()
 
         report_history = [d.to_dict() for d in history_docs]
-        report_history.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+        report_history.sort(key=lambda x: x.get('timestamp', '') or '', reverse=True)
         report_history = report_history[:15]
 
         # ── Run degradation prediction ──────────────────────────────────────
@@ -150,7 +150,7 @@ def dashboard_timeline_summary():
                          .where('vehicle_id', '==', worst['vehicle_id'])\
                          .stream()
         report_history = [d.to_dict() for d in history_docs]
-        report_history.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+        report_history.sort(key=lambda x: x.get('timestamp', '') or '', reverse=True)
         report_history = report_history[:15]
         prediction     = predict_degradation(report_history)
         recs           = service_recommendations(worst['timeline'], prediction)
