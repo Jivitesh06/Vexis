@@ -12,25 +12,35 @@ from datetime import datetime
 notifications_bp = Blueprint('notifications', __name__)
 
 # ── GET /api/notifications/trigger-cron ─────────────────────────────────
-@notifications_bp.route('/notifications/trigger-cron', methods=['GET'])
+@notifications_bp.route('/notifications/trigger-cron', methods=['GET', 'POST'])
 def trigger_cron_endpoint():
     """
     Secure endpoint to trigger the daily cron job via external services (cron-job.org).
     Requires a secret token to prevent unauthorized execution.
+    Responds IMMEDIATELY with 200 and runs the job in a background thread to avoid timeouts.
     """
-    secret = request.args.get('secret')
+    secret = request.args.get('secret') or request.headers.get('X-Cron-Secret', '')
     expected_secret = os.getenv('CRON_SECRET', 'vexis-secret-cron-key')
-    
+
     if secret != expected_secret:
         return jsonify({'error': 'Unauthorized'}), 401
-        
-    try:
-        from cron_notifications import run_cron
-        # Run it synchronously since it only takes a few seconds
-        run_cron()
-        return jsonify({'success': True, 'message': 'Cron job executed successfully.'}), 200
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+
+    import threading
+    def _run():
+        try:
+            from cron_notifications import run_cron
+            run_cron()
+        except Exception as e:
+            print(f'[CRON BACKGROUND ERROR] {e}')
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+
+    return jsonify({
+        'success': True,
+        'message': 'Cron job started in background.',
+        'started_at': datetime.utcnow().isoformat()
+    }), 200
 
 
 # ── GET /api/notifications/preferences ──────────────────────────────────
