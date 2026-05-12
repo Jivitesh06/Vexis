@@ -4,8 +4,16 @@ Handles sending vehicle health notifications via Gmail App Password.
 """
 import smtplib
 import os
+import sys
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.header import Header
+
+# Force UTF-8 output so emoji in subject lines don't crash on Windows
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except AttributeError:
+    pass
 
 
 def send_email(to_email: str, subject: str, html_body: str) -> tuple[bool, str]:
@@ -23,17 +31,20 @@ def send_email(to_email: str, subject: str, html_body: str) -> tuple[bool, str]:
 
     try:
         msg = MIMEMultipart('alternative')
-        msg['Subject'] = subject
+        msg['Subject'] = Header(subject, 'utf-8').encode()
         msg['From']    = f'Vexis AI <{sender}>'
         msg['To']      = to_email
 
-        msg.attach(MIMEText(html_body, 'html'))
+        msg.attach(MIMEText(html_body, 'html', 'utf-8'))
 
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
             server.login(sender, app_pass)
-            server.sendmail(sender, to_email, msg.as_string())
+            server.sendmail(sender, to_email, msg.as_bytes())
 
-        print(f'[EMAIL] Sent "{subject}" → {to_email}')
+        try:
+            print(f'[EMAIL] Sent "{subject}" → {to_email}')
+        except UnicodeEncodeError:
+            print('[EMAIL] Sent successfully (subject contains emoji)')
         return True, "Email sent successfully"
 
     except Exception as e:
