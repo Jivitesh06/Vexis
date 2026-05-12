@@ -1508,8 +1508,13 @@ async function loadVehiclesSection(container) {
       });
       
       vehicles.sort((a, b) => {
-        const t1 = a.created_at ? a.created_at.toMillis() : 0;
-        const t2 = b.created_at ? b.created_at.toMillis() : 0;
+        const getT = (val) => {
+          if (!val) return 0;
+          if (typeof val.toMillis === 'function') return val.toMillis();
+          return new Date(val).getTime() || 0;
+        };
+        const t1 = getT(a.created_at || a.createdAt);
+        const t2 = getT(b.created_at || b.createdAt);
         return t2 - t1;
       });
 
