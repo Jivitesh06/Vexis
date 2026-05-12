@@ -425,10 +425,28 @@ def predict_csv():
                 report_history   = report_history,
             )
 
-            if vehicle_id:
-                _fs().collection('vehicles').document(vehicle_id)\
-                     .collection('notification_meta').document('current')\
-                     .set({
+            if not vehicle_id:
+                # Generate a fallback vehicle_id so the notification engine can track it
+                import hashlib
+                vid_hash = hashlib.md5(f"{uid}_{vehicle_name}".encode()).hexdigest()[:8]
+                vehicle_id = f"v_{vid_hash}"
+
+            # Ensure parent vehicle document exists so it shows up in "My Vehicles" and timeline-summary
+            veh_ref = _fs().collection('vehicles').document(vehicle_id)
+            if not veh_ref.get().exists:
+                veh_ref.set({
+                    'userId':        uid,
+                    'name':          vehicle_name,
+                    'model':         vehicle_model,
+                    'created_at':    datetime.utcnow().isoformat(),
+                    'last_analysed': datetime.utcnow().isoformat()
+                })
+            else:
+                veh_ref.update({'last_analysed': datetime.utcnow().isoformat()})
+
+            _fs().collection('vehicles').document(vehicle_id)\
+                 .collection('notification_meta').document('current')\
+                 .set({
                          **timeline,
                          'uid':           uid,
                          'user_email':    request.user.get('email', ''),
