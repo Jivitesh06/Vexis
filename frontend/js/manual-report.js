@@ -14,6 +14,77 @@ if (!firebaseUser) {
   throw new Error('Not authenticated');
 }
 
+/* ── Self-contained Service Intelligence Card Builder ── */
+function buildServiceIntelligenceCard(tl) {
+  const pred   = tl.prediction || {};
+  const recs   = tl.service_recommendations || [];
+  const trend  = tl.trend || {};
+  const dir    = trend.direction || 'stable';
+  const score  = Math.round(tl.overall_score || 0);
+  const tier   = tl.tier || 'GOOD';
+
+  const tierColor = {'CRITICAL':'#ef4444','POOR':'#f97316','FAIR':'#fbbf24','GOOD':'#22c55e','EXCELLENT':'#22d3ee'}[tier] || '#00e5ff';
+  const trendIcon = dir === 'declining' ? '↓' : dir === 'improving' ? '↑' : '→';
+  const trendClr  = dir === 'declining' ? '#ef4444' : dir === 'improving' ? '#22c55e' : '#fbbf24';
+  const vel       = typeof pred.velocity === 'number' ? pred.velocity.toFixed(1) : '0.0';
+
+  const daysStr = (days, label) => {
+    if (!days || days <= 0) return '';
+    return `<div style="background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:12px 14px;text-align:center">
+      <div style="font-size:11px;color:#64748b;margin-bottom:4px">${label}</div>
+      <div style="font-family:Orbitron,sans-serif;font-size:22px;font-weight:700;color:#00e5ff">${days}</div>
+      <div style="font-size:10px;color:#94a3b8">days</div>
+    </div>`;
+  };
+
+  const recRows = recs.slice(0,4).map(r => {
+    const uc = r.urgency === 'CRITICAL' ? '#ef4444' : r.urgency === 'URGENT' ? '#f97316' : '#fbbf24';
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:rgba(255,255,255,.03);border-radius:8px;border:1px solid rgba(255,255,255,.06);margin-bottom:6px">
+      <span style="font-size:12px;color:#e2e8f0">${r.service}</span>
+      <span style="font-size:10px;font-weight:700;color:${uc};background:${uc}22;padding:2px 8px;border-radius:999px;border:1px solid ${uc};white-space:nowrap;margin-left:8px">${r.urgency}</span>
+    </div>`;
+  }).join('');
+
+  return `
+  <div style="background:linear-gradient(135deg,rgba(0,229,255,.06),rgba(0,229,255,.02));border:1px solid rgba(0,229,255,.25);border-radius:16px;padding:24px;animation:slideIn .4s ease">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
+      <div style="width:36px;height:36px;background:linear-gradient(135deg,rgba(0,229,255,.2),rgba(0,229,255,.05));border:1px solid rgba(0,229,255,.3);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px">🧠</div>
+      <div>
+        <div style="font-family:Orbitron,sans-serif;font-size:14px;font-weight:700;color:#e2e8f0">Service Intelligence</div>
+        <div style="font-size:11px;color:#64748b">AI Degradation Forecast · ${tl.vehicle_name || 'Your Vehicle'}</div>
+      </div>
+      <span style="margin-left:auto;font-size:10px;font-weight:700;color:${tierColor};background:${tierColor}22;padding:3px 10px;border-radius:999px;border:1px solid ${tierColor}">${tier}</span>
+    </div>
+
+    <!-- Score + Trend -->
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px;padding:14px;background:rgba(0,0,0,.25);border-radius:12px;border:1px solid rgba(255,255,255,.06)">
+      <div style="width:56px;height:56px;border-radius:50%;background:conic-gradient(${tierColor} ${score * 3.6}deg,rgba(255,255,255,.06) 0);display:flex;align-items:center;justify-content:center;font-family:Orbitron,sans-serif;font-size:13px;font-weight:700;color:${tierColor}">${score}</div>
+      <div>
+        <div style="font-size:11px;color:#64748b;margin-bottom:2px">Health Trend</div>
+        <div style="font-size:14px;font-weight:700;color:${trendClr}">${trendIcon} ${dir.charAt(0).toUpperCase()+dir.slice(1)}</div>
+        <div style="font-size:11px;color:#64748b">${vel} pts/day</div>
+      </div>
+      <div style="margin-left:auto;text-align:right">
+        <div style="font-size:10px;color:#64748b">Confidence</div>
+        <div style="font-size:12px;font-weight:600;color:#e2e8f0">${pred.confidence || 'INSUFFICIENT'}</div>
+      </div>
+    </div>
+
+    <!-- Countdown -->
+    ${(pred.days_until_poor || pred.days_until_critical) ? `
+    <div style="font-size:11px;color:#64748b;margin-bottom:8px;font-weight:600;letter-spacing:.5px">AI DEGRADATION FORECAST</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+      ${daysStr(pred.days_until_poor, 'Until POOR')}
+      ${daysStr(pred.days_until_critical, 'Until CRITICAL')}
+    </div>` : ''}
+
+    <!-- Recommendations -->
+    ${recRows ? `
+    <div style="font-size:11px;color:#64748b;margin-bottom:8px;font-weight:600;letter-spacing:.5px">RECOMMENDED ACTIONS</div>
+    ${recRows}` : ''}
+  </div>`;
+}
+
 /* ── tiny toast ── */
 function toast(msg, type = 'info') {
   const bg = type === 'success' ? '#22c55e' : type === 'error' ? '#ef4444' : '#00e5ff';
@@ -350,19 +421,26 @@ function wireEvents() {
         `PDF for "${vehicleName}" saved. Check Past Reports to view it.`);
       toast('PDF report downloaded & saved to Past Reports!', 'success');
 
-      // 3. Fetch and Render Service Intelligence
+      // 3. Fetch and Render Service Intelligence (wait 1.5s so Firestore finishes writing)
       const intelContainer = document.getElementById('mr-intel-container');
       if (intelContainer) {
+        intelContainer.innerHTML = `<div style="padding:16px;text-align:center;color:#64748b;font-size:12px">⏳ Loading Service Intelligence...</div>`;
+        intelContainer.style.display = 'block';
         try {
+          await new Promise(r => setTimeout(r, 1500)); // Wait for Firestore to finish writing
           const tlRes = await fetch(`${API_BASE}/dashboard/timeline-summary`, {
             headers: { 'Authorization': `Bearer ${token}` }
           }).then(r => r.json());
-          
-          if (tlRes && tlRes.has_data && typeof window.renderServiceIntelligence === 'function') {
-            intelContainer.innerHTML = window.renderServiceIntelligence(tlRes);
-            intelContainer.style.display = 'block';
+
+          if (tlRes && tlRes.has_data) {
+            intelContainer.innerHTML = buildServiceIntelligenceCard(tlRes);
+          } else {
+            intelContainer.style.display = 'none';
           }
-        } catch(e) { console.warn('Could not load service intelligence on manual page', e); }
+        } catch(e) {
+          console.warn('Could not load service intelligence:', e);
+          intelContainer.style.display = 'none';
+        }
       }
 
       setTimeout(resetZone, 15000); // Wait longer so they can read the intel card
