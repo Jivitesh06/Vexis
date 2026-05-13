@@ -4,6 +4,7 @@ REST endpoints for notification preferences and test emails.
 """
 from flask import Blueprint, request, jsonify
 import os
+import threading
 from utils.firebase_auth import firebase_required
 from utils.email_sender import send_email
 from utils.email_templates import build_health_email
@@ -11,27 +12,61 @@ from datetime import datetime
 
 notifications_bp = Blueprint('notifications', __name__)
 
-# ── GET /api/notifications/trigger-cron ─────────────────────────────────
+# ── Keep-alive endpoint — ping every 13 min to prevent Render sleep ──────────
+@notifications_bp.route('/keep-alive', methods=['GET'])
+def keep_alive():
+    """Lightweight endpoint to keep Render from sleeping on free tier."""
+    return jsonify({'status': 'alive', 'ts': datetime.utcnow().isoformat()}), 200
+
+
+# ── Dedup guard — prevents double-run if cron-job.org retries ────────────────
+_cron_lock = threading.Lock()
+_last_cron_run = None
+_MIN_CRON_INTERVAL_SECONDS = 300  # Don't re-run within 5 minutes of last run
+
+
+# ── GET /api/notifications/trigger-cron ─────────────────────────────────────
 @notifications_bp.route('/notifications/trigger-cron', methods=['GET', 'POST'])
 def trigger_cron_endpoint():
     """
     Secure endpoint to trigger the daily cron job via external services (cron-job.org).
-    Requires a secret token to prevent unauthorized execution.
-    Responds IMMEDIATELY with 200 and runs the job in a background thread to avoid timeouts.
+    - Protected by secret key
+    - Returns 200 IMMEDIATELY so cron-job.org never times out
+    - Has a dedup guard: won't run twice within 5 minutes (handles retries)
+    - Background thread does the actual work
     """
+    global _last_cron_run
+
     secret = request.args.get('secret') or request.headers.get('X-Cron-Secret', '')
     expected_secret = os.getenv('CRON_SECRET', 'vexis-secret-cron-key')
 
     if secret != expected_secret:
         return jsonify({'error': 'Unauthorized'}), 401
 
-    import threading
+    now = datetime.utcnow()
+
+    # Dedup guard — if already ran within last 5 mins, skip silently
+    if _last_cron_run is not None:
+        elapsed = (now - _last_cron_run).total_seconds()
+        if elapsed < _MIN_CRON_INTERVAL_SECONDS:
+            return jsonify({
+                'success': True,
+                'message': 'Skipped — already ran recently.',
+                'last_run': _last_cron_run.isoformat(),
+                'next_eligible_in_seconds': int(_MIN_CRON_INTERVAL_SECONDS - elapsed)
+            }), 200
+
+    # Mark as running immediately to block concurrent retries
+    _last_cron_run = now
+
     def _run():
         try:
             from cron_notifications import run_cron
             run_cron()
+            print(f'[CRON] Completed at {datetime.utcnow().isoformat()}')
         except Exception as e:
             print(f'[CRON BACKGROUND ERROR] {e}')
+            import traceback; traceback.print_exc()
 
     t = threading.Thread(target=_run, daemon=True)
     t.start()
@@ -39,7 +74,7 @@ def trigger_cron_endpoint():
     return jsonify({
         'success': True,
         'message': 'Cron job started in background.',
-        'started_at': datetime.utcnow().isoformat()
+        'started_at': now.isoformat()
     }), 200
 
 
