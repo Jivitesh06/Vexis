@@ -35,4 +35,11 @@ jobs:
           MAIL_EMAIL: ${{ secrets.MAIL_EMAIL }}
           MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
           PYTHONIOENCODING: utf-8
-        run: python cron_notifications.py
+        run: |
+          # Write the JSON secret to a temporary file for Firebase to read reliably
+          echo "$FIREBASE_CREDENTIALS_JSON" > firebase-service-account.json
+          
+          # Tell the script where to find the file
+          export FIREBASE_CREDENTIALS_PATH="firebase-service-account.json"
+          
+          python cron_notifications.py
