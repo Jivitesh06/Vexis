@@ -1,0 +1,38 @@
+name: Vexis Daily Email Notifications
+
+on:
+  schedule:
+    # Run every day at 02:30 UTC (which is 8:00 AM IST)
+    - cron: '30 2 * * *'
+  workflow_dispatch: # Allows manual trigger from the Actions tab
+
+jobs:
+  run-cron:
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: ./backend
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip' # Cache pip dependencies to speed up future runs
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Daily Cron Script
+        env:
+          FIREBASE_CREDENTIALS_JSON: ${{ secrets.FIREBASE_CREDENTIALS_JSON }}
+          MAIL_EMAIL: ${{ secrets.MAIL_EMAIL }}
+          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+          PYTHONIOENCODING: utf-8
+        run: python cron_notifications.py
