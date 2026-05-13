@@ -31,13 +31,14 @@ jobs:
 
       - name: Run Daily Cron Script
         env:
-          FIREBASE_SECRET: ${{ secrets.FIREBASE_CREDENTIALS_JSON }}
           MAIL_EMAIL: ${{ secrets.MAIL_EMAIL }}
           MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
           PYTHONIOENCODING: utf-8
         run: |
-          # Write the JSON secret to a temporary file for Firebase to read reliably
-          echo "$FIREBASE_SECRET" > firebase-service-account.json
+          # Write the JSON secret to a temporary file using EOF to preserve all formatting exactly
+          cat << 'EOF' > firebase-service-account.json
+          ${{ secrets.FIREBASE_CREDENTIALS_JSON }}
+          EOF
           
           # Tell the script where to find the file
           export FIREBASE_CREDENTIALS_PATH="firebase-service-account.json"
