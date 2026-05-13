@@ -1,82 +1,107 @@
-# Vexis — AI Vehicle Health Intelligence
+<div align="center">
+  <img src="frontend/assets/logo.png" alt="Vexis Logo" width="120" />
+  <h1>Vexis — AI Vehicle Health Intelligence</h1>
+  <p><strong>Predictive maintenance and real-time vehicle health scoring using OBD-II sensor data and Machine Learning.</strong></p>
+</div>
 
-AI-powered vehicle health scoring system
-using OBD-II sensor data and Isolation
-Forest ML models.
+## 🚀 Overview
 
-## Tech Stack
-- Frontend: HTML, CSS, JavaScript
-- Backend: Python Flask + Flask-SocketIO
-- Database: PostgreSQL (Supabase)
-- ML: 5x Isolation Forest models
-- OBD: USB ELM327 via Web Serial API
-- Email: Gmail SMTP
-- Deploy: Render + Netlify + Supabase
+Vexis is a cutting-edge, web-based platform that brings enterprise-level vehicle diagnostics to everyday drivers. By connecting an OBD-II scanner directly to your browser via the **Web Serial API**, Vexis streams live engine data to an **AI-powered backend**. 
 
-## Features
-- Real-time OBD data via Web Serial API
-- Live metrics dashboard
-- AI health analysis (batch prediction)
-- Email verification system
-- JWT authentication
-- PDF health reports
-- Forgot password flow
-- Responsive design (mobile/tablet/desktop)
+Instead of just showing raw numbers, our **Isolation Forest ML models** analyze the data across 5 core components to generate a human-readable Health Score (0-100), predict future degradation, and provide actionable service recommendations before critical failures occur.
 
-## Local Setup
+## ✨ Key Features
 
-### Backend
-```bash
-cd vexis/backend
-pip install -r requirements.txt
-cp .env.example .env
-# Edit .env with your values
-python database.py
-python app.py
-```
+- 🏎️ **Live OBD-II Streaming:** Connects directly via USB/Bluetooth ELM327 using the browser's Web Serial API. No native app required.
+- 🧠 **AI Service Intelligence:** 5 specialized ML models evaluate Engine, Fuel, Efficiency, Driving, and Thermal systems to detect anomalies.
+- 🔮 **Predictive Degradation Forecast:** Calculates the velocity of health decline and predicts how many days until your vehicle reaches a POOR or CRITICAL state.
+- 📊 **Manual CSV Reports:** Upload offline OBD data files for instant batch analysis and PDF report generation.
+- 🔔 **Automated Cron Notifications:** Daily background tasks evaluate your vehicle's timeline and send HTML email alerts if urgent service is needed.
+- 📱 **Premium UI/UX:** Built with a stunning dark-mode glassmorphism design, interactive Chart.js visualizations, and responsive layouts.
+
+## 🛠️ Technology Stack
+
+Vexis underwent a major architectural upgrade to ensure high availability and robust performance.
 
 ### Frontend
+- **Core:** Vanilla JS (ES Modules), HTML5, CSS3
+- **Styling:** Custom CSS with Glassmorphism, CSS Variables, and Orbitron typography
+- **Data Viz:** Chart.js
+- **PDF Generation:** jsPDF
+- **Hosting:** Firebase Hosting
+
+### Backend & ML
+- **Framework:** Python, Flask, Flask-SocketIO (Eventlet)
+- **Machine Learning:** Scikit-Learn (Isolation Forests), Pandas, NumPy
+- **Email:** Gmail SMTP (Port 587 STARTTLS)
+- **Hosting:** Render (Web Service)
+
+### Database & Auth
+- **Provider:** Firebase / Google Cloud
+- **Authentication:** Firebase Auth (Email/Password)
+- **Database:** Cloud Firestore (NoSQL Document Store)
+- **Storage:** Firebase Storage (for PDF archiving)
+
+### Automation
+- **Cron Jobs:** cron-job.org triggering secure backend Flask endpoints.
+
+## ⚙️ Local Development Setup
+
+### 1. Backend Setup
 ```bash
+# Navigate to backend
+cd vexis/backend
+
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Environment Variables
+# Create a .env file based on .env.example
+# Ensure you have your Firebase Admin SDK JSON file ready and linked in the .env
+
+# Run the Flask Server
+python app.py
+```
+*Backend will run on `http://127.0.0.1:5000`*
+
+### 2. Frontend Setup
+```bash
+# Navigate to frontend
 cd vexis/frontend
+
+# Start a local Python HTTP server
 python -m http.server 3000
-# Open: http://localhost:3000
 ```
+*Open `http://localhost:3000` in your browser. Note: Update `js/api.js` to point to `http://127.0.0.1:5000/api` for local testing.*
 
-## ML Models
-5 Isolation Forest models trained on
-Vehicle Energy Dataset (VED) Kaggle.
-Components: Engine | Fuel | Efficiency | Driving | Thermal
+## 🔌 OBD Connection Guide
 
-Scoring: decision_function() → 0-100
-Final: Weighted median aggregation
+1. Plug a USB or Bluetooth ELM327 adapter into your car's OBD-II port.
+2. Open the Vexis Dashboard in Google Chrome or Microsoft Edge (Safari/Firefox do not support Web Serial).
+3. Click **"Connect OBD Scanner"**.
+4. Select the appropriate COM port from the browser prompt.
+5. Live sensor data will begin streaming automatically via WebSockets.
+6. Click **"Start Health Analysis"** to trigger the AI scoring engine.
 
-## OBD Connection
-1. Plug USB ELM327 into car OBD port
-2. Open dashboard in Chrome
-3. Click "Connect OBD Scanner"
-4. Select COM port from browser
-5. Live data streams automatically
-6. Click "Start Health Analysis"
-   for ML-powered scoring
+## 🤖 ML Models & Training
 
-## API
-```
-GET  /api/health             → server status
-POST /api/auth/signup
-POST /api/auth/login
-POST /api/predict/batch      → main ML endpoint
-GET  /api/reports            → past reports
-GET  /api/reports/download/<id> → PDF
-```
+Our models were trained on a subset of the **Vehicle Energy Dataset (VED)** from Kaggle, comprising over 100,000 rows of real-world driving data.
+- **Algorithm:** Isolation Forest (unsupervised anomaly detection)
+- **Scoring:** `decision_function()` mapped to a normalized 0-100 scale.
+- **Final Output:** A weighted median aggregation of the 5 component scores determines the overall Vehicle Health Tier (EXCELLENT, GOOD, FAIR, POOR, CRITICAL).
 
-## Deployment
-| Service  | Platform        |
-|----------|----------------|
-| Database | Supabase.com (free PostgreSQL) |
-| Backend  | Render.com (free tier)         |
-| Frontend | Netlify.com (free tier)        |
+## 🌍 Production Environment
 
-## College Project
-AI/ML Vehicle Health Scoring System  
-Training data: Vehicle Energy Dataset (VED) from Kaggle  
-~100K rows, 5 components
+| Service | Platform |
+|---------|----------|
+| **Frontend UI** | Firebase Hosting (`vexis-527f2.web.app`) |
+| **Backend API** | Render (`vexis-backend-kklg.onrender.com`) |
+| **Database** | Google Cloud Firestore |
+| **Cron Triggers** | cron-job.org |
+
+## 🎓 Academic Context
+This project was developed as a comprehensive AI/ML College Project focusing on predictive maintenance and IoT edge-to-cloud integration.
