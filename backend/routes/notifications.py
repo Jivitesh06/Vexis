@@ -78,7 +78,45 @@ def trigger_cron_endpoint():
     }), 200
 
 
-# ── GET /api/notifications/preferences ──────────────────────────────────
+# ── GET /api/notifications/test-email  — DEBUG ONLY ─────────────────────────
+@notifications_bp.route('/notifications/test-email', methods=['GET'])
+def test_email_endpoint():
+    """
+    Diagnostic endpoint: tries to send a test email synchronously.
+    Shows exactly what env vars are set and what error occurs.
+    Protected by same cron secret.
+    """
+    secret = request.args.get('secret') or request.headers.get('X-Cron-Secret', '')
+    expected_secret = os.getenv('CRON_SECRET', 'vexis-secret-cron-key')
+    if secret != expected_secret:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    mail_email    = os.getenv('MAIL_EMAIL', '')
+    mail_password = os.getenv('MAIL_PASSWORD', '')
+    to_email      = request.args.get('to', mail_email) or 'jiviteshgarg30@gmail.com'
+
+    env_status = {
+        'MAIL_EMAIL_set':    bool(mail_email),
+        'MAIL_EMAIL':        mail_email[:4] + '***' if mail_email else 'NOT SET',
+        'MAIL_PASSWORD_set': bool(mail_password),
+        'CRON_SECRET_set':   bool(os.getenv('CRON_SECRET')),
+    }
+
+    if not mail_email or not mail_password:
+        return jsonify({
+            'success': False,
+            'error': 'MAIL_EMAIL or MAIL_PASSWORD not set on this server!',
+            'env': env_status
+        }), 500
+
+    ok, msg = send_email(
+        to_email,
+        'Vexis Test Email — Cron Diagnostic',
+        '<h2>Vexis Test Email</h2><p>If you see this, email sending works on Render!</p>'
+    )
+    return jsonify({'success': ok, 'message': msg, 'to': to_email, 'env': env_status}), 200 if ok else 500
+
+
 @notifications_bp.route('/notifications/preferences', methods=['GET'])
 @firebase_required
 def get_preferences():
