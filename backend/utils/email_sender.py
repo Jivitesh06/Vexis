@@ -37,7 +37,11 @@ def send_email(to_email: str, subject: str, html_body: str) -> tuple[bool, str]:
 
         msg.attach(MIMEText(html_body, 'html', 'utf-8'))
 
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+        # Port 587 + STARTTLS — works on Render free tier (port 465 is blocked)
+        with smtplib.SMTP('smtp.gmail.com', 587, timeout=15) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
             server.login(sender, app_pass)
             server.sendmail(sender, to_email, msg.as_bytes())
 
