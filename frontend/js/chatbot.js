@@ -14,10 +14,12 @@ const SUGGESTIONS = [
   '📊 Explain my health score',
 ];
 
-let chatHistory   = [];   // [{role:'user'|'bot', text:'...'}]
+let chatHistory   = [];   // [{role:'user'|'model', text:'...'}]
 let isTyping      = false;
 let currentUser   = null;
 let hasContext    = false;
+let geminiApiKey  = null;
+let systemPrompt  = null;
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 export async function initVexBot() {
@@ -168,32 +170,61 @@ async function sendMessage() {
   const typingEl = appendTypingIndicator();
 
   try {
-    const token = await getToken();
-    const res   = await fetch(`${API_BASE}/chatbot/message`, {
-      method:  'POST',
-      headers: {
-        'Content-Type':  'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        message: text,
-        history: chatHistory.slice(-8),  // last 8 for context
-      }),
-    });
-
-    const data = await res.json();
-    typingEl.remove();
-
-    const reply = data.reply || 'Sorry, something went wrong. Please try again.';
-    appendBotMessage(reply);
-    chatHistory.push({ role: 'bot', text: reply });
-
-    // Show context bar once we get a response (meaning context loaded)
+    // 1. Fetch Context & API Key from Backend if not cached
     if (!hasContext) {
+      const token = await getToken();
+      const ctxRes = await fetch(`${API_BASE}/chatbot/context`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const ctxData = await ctxRes.json();
+      if (!ctxData.success) {
+        throw new Error(ctxData.error || 'Failed to fetch context');
+      }
+      geminiApiKey = ctxData.api_key;
+      systemPrompt = ctxData.system_instruction;
       hasContext = true;
+      
       const ctxBar = document.getElementById('vexbot-ctx-bar');
       if (ctxBar) ctxBar.style.display = 'flex';
     }
+
+    if (!geminiApiKey) {
+      throw new Error("GEMINI_API_KEY not configured.");
+    }
+
+    // 2. Call Gemini API Directly from Browser
+    const contents = chatHistory.slice(-8).map(msg => ({
+      role: msg.role === 'bot' ? 'model' : 'user',
+      parts: [{ text: msg.text }]
+    }));
+
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`;
+    
+    const geminiRes = await fetch(geminiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        system_instruction: { parts: { text: systemPrompt } },
+        contents: contents,
+        generationConfig: {
+          temperature: 0.2,
+          maxOutputTokens: 1024
+        }
+      })
+    });
+
+    const geminiData = await geminiRes.json();
+
+    if (geminiData.error) {
+       console.error('[Gemini API Error]', geminiData.error);
+       throw new Error(geminiData.error.message || 'Gemini API Error');
+    }
+
+    const reply = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || 'Sorry, I could not generate a response.';
+    
+    typingEl.remove();
+    appendBotMessage(reply);
+    chatHistory.push({ role: 'bot', text: reply });
 
     // Show badge if chat is closed
     const win = document.getElementById('vexbot-window');
@@ -201,7 +232,7 @@ async function sendMessage() {
 
   } catch (err) {
     typingEl.remove();
-    appendBotMessage('🔧 I\'m having trouble connecting right now. Please try again in a moment.');
+    appendBotMessage('🔧 I\'m having trouble connecting right now. Please try again in a moment.\\n\\n`Error: ' + err.message + '`');
     console.error('[VexBot]', err);
   } finally {
     isTyping = false;

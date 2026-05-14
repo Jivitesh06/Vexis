@@ -14,17 +14,12 @@ chatbot_bp = Blueprint('chatbot', __name__)
 def _fs():
     return firestore.client()
 
-# ── Gemini client (lazy-loaded) ──────────────────────────────────────────────
-def _get_gemini(system_instruction: str = None):
-    import google.generativeai as genai
+# ── Gemini configuration (passed to frontend) ──────────────────────────────
+def _get_api_key():
     api_key = os.getenv('GEMINI_API_KEY', '')
     if not api_key:
         raise ValueError('GEMINI_API_KEY environment variable is not set.')
-    genai.configure(api_key=api_key)
-    return genai.GenerativeModel(
-        'gemini-2.5-flash',
-        system_instruction=system_instruction
-    )
+    return api_key
 
 
 # ── Fetch user context from Firestore ────────────────────────────────────────
@@ -180,23 +175,13 @@ VEXIS PLATFORM KNOWLEDGE:
 """
 
 
-# ── POST /api/chatbot/message ────────────────────────────────────────────────
-@chatbot_bp.route('/chatbot/message', methods=['POST'])
+# ── GET /api/chatbot/context ─────────────────────────────────────────────────
+@chatbot_bp.route('/chatbot/context', methods=['GET'])
 @firebase_required
-def chat_message():
+def chat_context():
     try:
-        uid  = request.user['uid']
-        body = request.get_json(silent=True) or {}
-
-        user_message = (body.get('message') or '').strip()
-        history      = body.get('history', [])   # [{role, text}, ...]
-
-        if not user_message:
-            return jsonify({'error': 'Message cannot be empty'}), 400
-
-        if len(user_message) > 1000:
-            return jsonify({'error': 'Message too long (max 1000 chars)'}), 400
-
+        uid = request.user['uid']
+        
         # 1. Fetch user context from Firestore
         user_context = _build_user_context(uid)
 
@@ -205,34 +190,14 @@ def chat_message():
             SYSTEM_PROMPT
             + f"\n\n--- USER'S VEHICLE DATA (from Vexis database) ---\n{user_context}\n---\n"
         )
-
-        # 3. Build Gemini chat history
-        model = _get_gemini(system_instruction=full_system)
         
-        gemini_history = []
-        for msg in history[-8:]:   # last 8 messages for context window
-            role = 'user' if msg.get('role') == 'user' else 'model'
-            gemini_history.append({
-                'role': role,
-                'parts': [msg.get('text', '')]
-            })
-
-        # 4. Start chat session
-        chat = model.start_chat(history=gemini_history)
-
-        response = chat.send_message(
-            user_message,
-            generation_config={
-                'temperature': 0.2,
-                'max_output_tokens': 1024,
-            }
-        )
-
-        bot_reply = response.text
+        # 3. Get API Key
+        api_key = _get_api_key()
 
         return jsonify({
-            'reply': bot_reply,
-            'success': True
+            'success': True,
+            'system_instruction': full_system,
+            'api_key': api_key
         }), 200
 
     except ValueError as ve:
