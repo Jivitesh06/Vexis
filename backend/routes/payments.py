@@ -46,7 +46,8 @@ PLANS = {
 
 def _get_razorpay_client():
     import razorpay
-    key_id     = os.getenv('RAZORPAY_KEY_ID', '')
+    # Fallback to the test key if env var is missing
+    key_id     = os.getenv('RAZORPAY_KEY_ID', 'rzp_test_Sp78k3JIxzjZH1')
     key_secret = os.getenv('RAZORPAY_KEY_SECRET', '')
     return razorpay.Client(auth=(key_id, key_secret))
 
@@ -144,7 +145,7 @@ def create_order():
             'amount':    plan['amount'],
             'currency':  'INR',
             'plan_name': plan['name'],
-            'key_id':    os.getenv('RAZORPAY_KEY_ID', ''),
+            'key_id':    os.getenv('RAZORPAY_KEY_ID', 'rzp_test_Sp78k3JIxzjZH1'),
         }), 200
 
     except Exception as e:

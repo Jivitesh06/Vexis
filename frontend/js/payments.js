@@ -229,7 +229,7 @@ async function initiatePayment(planId) {
     document.getElementById('plans-grid').style.display = 'grid';
 
     const options = {
-      key:         RAZORPAY_KEY,
+      key:         order.key_id,        // ← use the SAME key the backend used to create the order
       amount:      order.amount,
       currency:    order.currency,
       name:        'Vexis AI',
