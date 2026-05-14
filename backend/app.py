@@ -13,7 +13,8 @@ from routes.reports import reports_bp
 from routes.vehicles import vehicles_bp
 from routes.notifications import notifications_bp
 from routes.timeline import timeline_bp
-from routes.payments import payments_bp
+from routes.payments  import payments_bp
+from routes.chatbot   import chatbot_bp
 from utils.firebase_auth import firebase_required, init_firebase
 from obd_reader import (
     init_socketio, connect_obd, disconnect_obd,
@@ -80,6 +81,7 @@ app.register_blueprint(vehicles_bp, url_prefix='/api')
 app.register_blueprint(notifications_bp, url_prefix='/api')
 app.register_blueprint(timeline_bp,      url_prefix='/api')
 app.register_blueprint(payments_bp,      url_prefix='/api')
+app.register_blueprint(chatbot_bp,       url_prefix='/api')
 
 # ──────────────────────────────────────────────────────────────────
 # Health check
