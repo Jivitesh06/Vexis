@@ -21,7 +21,7 @@ def _get_gemini():
     if not api_key:
         raise ValueError('GEMINI_API_KEY environment variable is not set.')
     genai.configure(api_key=api_key)
-    return genai.GenerativeModel('gemini-pro')
+    return genai.GenerativeModel('gemini-2.5-flash')
 
 
 # ── Fetch user context from Firestore ────────────────────────────────────────
