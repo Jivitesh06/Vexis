@@ -6,9 +6,13 @@ Uses Google Gemini 1.5 Flash (free tier) with RAG pattern.
 import os
 import traceback
 from flask        import Blueprint, request, jsonify
-from utils.firebase_auth import firebase_required, _fs
+from utils.firebase_auth import firebase_required
+from firebase_admin import firestore
 
 chatbot_bp = Blueprint('chatbot', __name__)
+
+def _fs():
+    return firestore.client()
 
 # ── Gemini client (lazy-loaded) ──────────────────────────────────────────────
 def _get_gemini():
