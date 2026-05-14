@@ -49,6 +49,7 @@ Our **Isolation Forest ML models** analyze sensor readings across 5 core vehicle
 | 🔮 **Predictive Degradation** | Calculates health-decline velocity & forecasts days until critical failure |
 | 📄 **Manual CSV Reports** | Upload offline OBD data → instant batch analysis → downloadable PDF |
 | 💳 **Subscription Payments** | Razorpay-powered plans gate AI features with pay-per-use or recurring access |
+| 💬 **VexBot AI Assistant** | Context-aware RAG chatbot powered by Gemini 2.5 Flash for personalized automotive advice |
 | 🔔 **Daily Email Alerts** | GitHub Actions cron sends HTML health summaries every morning at 8 AM IST |
 | 📊 **Service Intelligence** | Trend analysis, service recommendations, and risk forecasting per vehicle |
 | 🔐 **Firebase Auth** | Email/password auth with token-based API protection |
@@ -72,6 +73,7 @@ Our **Isolation Forest ML models** analyze sensor readings across 5 core vehicle
 |-------|-----------|
 | Framework | Python 3.11, Flask 3.0, Flask-SocketIO (Eventlet) |
 | ML Models | Scikit-Learn (Isolation Forests), XGBoost, Pandas, NumPy |
+| LLM API | Google Generative AI (Gemini 2.5 Flash + RAG) |
 | PDF Engine | ReportLab |
 | Email | Gmail SMTP (Port 587 + STARTTLS) |
 | Payments | Razorpay Python SDK |
@@ -103,7 +105,8 @@ Our **Isolation Forest ML models** analyze sensor readings across 5 core vehicle
 │  Flask + SocketIO    │  │  ├─ Authentication                   │
 │  ├─ ML Models        │  │  ├─ Firestore (reports, subscriptions│
 │  ├─ PDF Generator    │  │  └─ Storage (PDF archive)            │
-│  ├─ Razorpay SDK     │  └──────────────────────────────────────┘
+│  ├─ VexBot (Gemini)  │  └──────────────────────────────────────┘
+│  ├─ Razorpay SDK     │
 │  └─ SMTP Email       │
 └──────────────────────┘
                ▲
@@ -198,6 +201,7 @@ firebase serve
 |----------|-------------|
 | `FIREBASE_CREDENTIALS_JSON` | Full Firebase service account JSON (for production) |
 | `FIREBASE_CREDENTIALS_PATH` | Path to service account file (for local dev) |
+| `GEMINI_API_KEY` | Google AI Studio API Key for VexBot |
 | `MAIL_EMAIL` | Gmail address for sending notifications |
 | `MAIL_PASSWORD` | Gmail App Password (16-char, not regular password) |
 | `RAZORPAY_KEY_ID` | Razorpay API Key ID |
@@ -255,6 +259,7 @@ To trigger manually: **GitHub → Actions → Vexis Daily Email Notifications �
 | POST | `/api/predict/batch` | ✅ 💳 | Multi-row live analysis → report (subscription required) |
 | POST | `/api/predict/csv` | ✅ 💳 | CSV upload → PDF report (subscription required) |
 | GET | `/api/live-metrics` | ✅ | Simulated live OBD metrics |
+| POST | `/api/chatbot/message` | ✅ | VexBot Gemini API with RAG context injection |
 
 ### Payments
 | Method | Endpoint | Auth | Description |
