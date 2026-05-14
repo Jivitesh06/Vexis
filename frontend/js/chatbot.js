@@ -44,7 +44,7 @@ function injectHTML() {
   wrap.innerHTML = `
     <!-- Floating trigger -->
     <button id="vexbot-trigger" aria-label="Open VexBot chat" title="Ask VexBot">
-      🚗
+      💬
       <span id="vexbot-badge"></span>
     </button>
 
@@ -56,7 +56,7 @@ function injectHTML() {
           <div class="vexbot-name">VexBot</div>
           <div class="vexbot-status">Vehicle AI Online</div>
         </div>
-        <button class="vexbot-clear" id="vexbot-clear" title="Clear chat">🗑</button>
+        <button class="vexbot-close" id="vexbot-close" title="Close chat">×</button>
       </div>
 
       <div class="vexbot-context-bar" id="vexbot-ctx-bar" style="display:none">
@@ -89,7 +89,7 @@ function wireEvents() {
   const window_     = document.getElementById('vexbot-window');
   const input       = document.getElementById('vexbot-input');
   const sendBtn     = document.getElementById('vexbot-send');
-  const clearBtn    = document.getElementById('vexbot-clear');
+  const closeBtn    = document.getElementById('vexbot-close');
   const suggestions = document.getElementById('vexbot-suggestions');
 
   // Toggle open/close
@@ -120,11 +120,10 @@ function wireEvents() {
     input.style.height = Math.min(input.scrollHeight, 100) + 'px';
   });
 
-  // Clear chat
-  clearBtn.addEventListener('click', () => {
-    chatHistory = [];
-    document.getElementById('vexbot-messages').innerHTML = '';
-    appendBotMessage('Chat cleared! Ask me anything about your vehicle 🚗');
+  // Close chat
+  closeBtn.addEventListener('click', () => {
+    window_.classList.remove('open');
+    trigger.classList.remove('open');
   });
 
   // Quick suggestions

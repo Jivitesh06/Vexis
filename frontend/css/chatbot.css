@@ -134,7 +134,7 @@
   0%, 100% { opacity: 1; }
   50%       { opacity: 0.3; }
 }
-.vexbot-clear {
+.vexbot-close {
   background: none;
   border: 1px solid rgba(255,255,255,0.1);
   color: rgba(255,255,255,0.4);
@@ -142,13 +142,14 @@
   height: 28px;
   border-radius: 8px;
   cursor: pointer;
-  font-size: 0.75rem;
+  font-size: 1.2rem;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
+  padding-bottom: 2px;
 }
-.vexbot-clear:hover {
+.vexbot-close:hover {
   background: rgba(239,68,68,0.15);
   color: #ef4444;
   border-color: rgba(239,68,68,0.3);
