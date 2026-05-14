@@ -117,6 +117,7 @@
   border-radius: 16px;
   opacity: 0;
   transition: opacity 0.3s;
+  pointer-events: none;   /* ← fix: never intercept clicks */
 }
 .plan-card:hover {
   transform: translateY(-6px);
@@ -135,7 +136,7 @@
 
 .plan-card:hover {
   border-color: var(--plan-color);
-  box-shadow: 0 16px 40px rgba(0,0,0,0.3), 0 0 30px color-mix(in srgb, var(--plan-color) 20%, transparent);
+  box-shadow: 0 16px 40px rgba(0,0,0,0.3), 0 0 30px rgba(99,102,241,0.15);
 }
 
 /* Best Value badge */
@@ -152,6 +153,7 @@
   text-transform: uppercase;
   padding: 3px 12px;
   border-radius: 0 0 8px 8px;
+  pointer-events: none;   /* ← badge must not block card clicks */
 }
 
 .plan-icon {
@@ -211,11 +213,13 @@
   text-transform: uppercase;
   cursor: pointer;
   transition: all 0.2s;
+  position: relative;   /* ← ensure button is above ::before layer */
+  z-index: 1;
 }
 .plan-cta:hover {
   background: var(--plan-color, rgba(255,255,255,0.1));
   color: #000;
-  box-shadow: 0 6px 20px color-mix(in srgb, var(--plan-color) 40%, transparent);
+  box-shadow: 0 6px 20px rgba(99,102,241,0.3);
 }
 
 /* ── Processing / Success States ───────────────────────── */
