@@ -31,16 +31,29 @@ jobs:
 
       - name: Run Daily Cron Script
         env:
+          FIREBASE_CREDENTIALS_JSON: ${{ secrets.FIREBASE_CREDENTIALS_JSON }}
           MAIL_EMAIL: ${{ secrets.MAIL_EMAIL }}
           MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+          FIREBASE_CREDENTIALS_PATH: firebase-service-account.json
           PYTHONIOENCODING: utf-8
         run: |
-          # Write the JSON secret to a temporary file using EOF to preserve all formatting exactly
-          cat << 'EOF' > firebase-service-account.json
-          ${{ secrets.FIREBASE_CREDENTIALS_JSON }}
-          EOF
-          
-          # Tell the script where to find the file
-          export FIREBASE_CREDENTIALS_PATH="firebase-service-account.json"
+          # Use Python to write the JSON file — avoids ALL bash shell escaping issues
+          python - << 'PYEOF'
+          import os, json, sys
+          raw = os.environ.get('FIREBASE_CREDENTIALS_JSON', '').strip()
+          if not raw:
+              print('ERROR: FIREBASE_CREDENTIALS_JSON secret is empty!')
+              sys.exit(1)
+          try:
+              data = json.loads(raw)
+          except Exception as e:
+              print(f'ERROR: JSON parse failed: {e}')
+              print(f'First 200 chars of secret: {raw[:200]}')
+              sys.exit(1)
+          with open('firebase-service-account.json', 'w') as f:
+              json.dump(data, f, indent=2)
+          print('[OK] firebase-service-account.json written successfully')
+          PYEOF
           
           python cron_notifications.py
+
