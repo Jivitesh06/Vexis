@@ -15,13 +15,16 @@ def _fs():
     return firestore.client()
 
 # ── Gemini client (lazy-loaded) ──────────────────────────────────────────────
-def _get_gemini():
+def _get_gemini(system_instruction: str = None):
     import google.generativeai as genai
     api_key = os.getenv('GEMINI_API_KEY', '')
     if not api_key:
         raise ValueError('GEMINI_API_KEY environment variable is not set.')
     genai.configure(api_key=api_key)
-    return genai.GenerativeModel('gemini-2.5-flash')
+    return genai.GenerativeModel(
+        'gemini-2.5-flash',
+        system_instruction=system_instruction
+    )
 
 
 # ── Fetch user context from Firestore ────────────────────────────────────────
@@ -204,7 +207,8 @@ def chat_message():
         )
 
         # 3. Build Gemini chat history
-        model = _get_gemini()
+        model = _get_gemini(system_instruction=full_system)
+        
         gemini_history = []
         for msg in history[-8:]:   # last 8 messages for context window
             role = 'user' if msg.get('role') == 'user' else 'model'
@@ -213,38 +217,18 @@ def chat_message():
                 'parts': [msg.get('text', '')]
             })
 
-        # 4. Start chat session with system instruction
+        # 4. Start chat session
         chat = model.start_chat(history=gemini_history)
 
-        # Inject system prompt into first turn if history is empty
-        if not gemini_history:
-            full_message = full_system + '\n\nUser: ' + user_message
-        else:
-            full_message = user_message
-
         response = chat.send_message(
-            full_message if not gemini_history else user_message,
+            user_message,
             generation_config={
-                'temperature':     0.7,
-                'max_output_tokens': 512,
+                'temperature': 0.2,
+                'max_output_tokens': 1024,
             }
         )
 
-        # If history was empty, the system prompt was bundled — send context inline
-        if not gemini_history:
-            # Rebuild with system context in first message for proper conversation
-            chat2 = model.start_chat(history=[])
-            resp2 = chat2.send_message(
-                full_system + '\n\nNow the user will ask questions. '
-                'First user message:\n' + user_message,
-                generation_config={
-                    'temperature':       0.7,
-                    'max_output_tokens': 512,
-                }
-            )
-            bot_reply = resp2.text
-        else:
-            bot_reply = response.text
+        bot_reply = response.text
 
         return jsonify({
             'reply': bot_reply,
