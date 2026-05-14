@@ -259,6 +259,6 @@ def chat_message():
         print(f'[VexBot] error: {e}')
         traceback.print_exc()
         return jsonify({
-            'error':  'VexBot encountered an error',
-            'reply':  '🔧 VexBot is temporarily unavailable. Please try again in a moment.'
+            'error':  f'VexBot encountered an error: {str(e)}',
+            'reply':  f'🔧 VexBot is temporarily unavailable. Error: {str(e)}'
         }), 500
