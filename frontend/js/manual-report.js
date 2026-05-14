@@ -7,6 +7,7 @@ import {
   auth, db, collection, addDoc, serverTimestamp
 } from './firebase.js';
 import { API_BASE } from './api.js';
+import { requireSubscription } from './payments.js';
 
 const firebaseUser = await waitForUser();
 if (!firebaseUser) {
@@ -376,6 +377,11 @@ function wireEvents() {
 
   btn.addEventListener('click', async () => {
     if (!selectedFile) return;
+
+    // ── Subscription gate ────────────────────────────────────────────────────
+    requireSubscription(async () => {
+    // ────────────────────────────────────────────────────────────────────────
+
     const vehicleName  = vehName.value.trim()  || 'My Vehicle';
     const vehicleModel = vehModel.value.trim();
 
@@ -405,6 +411,17 @@ function wireEvents() {
       setProgress(80);
 
       const data = await res.json();
+
+      // ── 402 = subscription expired mid-session ───────────────────────────
+      if (res.status === 402 || data.error === 'subscription_required') {
+        btn.disabled = false; btnText.textContent = '🔬 Analyse & Download Report';
+        setProgress(0); clearStatus();
+        const { requireSubscription: rs } = await import('./payments.js');
+        rs(async () => btn.click());
+        return;
+      }
+      // ────────────────────────────────────────────────────────────────────
+
       if (!res.ok || !data.success) throw new Error(data.error || 'Analysis failed');
 
       setProgress(90);
@@ -454,6 +471,8 @@ function wireEvents() {
       btn.disabled = false; btnText.textContent = '🔬 Analyse & Download Report';
       setProgress(0);
     }
+
+    }); // end requireSubscription
   });
 
   tplBtn.addEventListener('click', () => {

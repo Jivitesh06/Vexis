@@ -129,7 +129,16 @@ def predict_live():
 @predict_bp.route('/predict/batch', methods=['POST'])
 @firebase_required
 def predict_batch():
-    try:
+    # ── Subscription gate ──────────────────────────────────────────────────
+    from routes.payments import check_subscription, consume_single_report
+    sub = check_subscription(request.user['uid'])
+    if not sub.get('active'):
+        return jsonify({
+            'error':            'subscription_required',
+            'message':          'An active subscription is required for AI analysis.',
+            'subscription_active': False,
+        }), 402
+    # ──────────────────────────────────────────────────────────────────────
         from datetime import datetime
         data         = request.get_json()
         rows         = data.get('rows', [])
@@ -199,6 +208,8 @@ def predict_batch():
             })
             report_id = ref[1].id
             print(f'[FIRESTORE] Batch report saved: {report_id}')
+            # Consume one report credit for single-plan users
+            consume_single_report(request.user['uid'])
         except Exception as fs_err:
             print(f'[WARN] predict_batch: Firestore save failed: {fs_err}')
 
@@ -253,6 +264,16 @@ def obd_agent_data():
 @predict_bp.route('/predict/csv', methods=['POST'])
 @firebase_required
 def predict_csv():
+    # ── Subscription gate ──────────────────────────────────────────────────
+    from routes.payments import check_subscription, consume_single_report
+    sub = check_subscription(request.user['uid'])
+    if not sub.get('active'):
+        return jsonify({
+            'error':            'subscription_required',
+            'message':          'An active subscription is required to generate PDF reports.',
+            'subscription_active': False,
+        }), 402
+    # ──────────────────────────────────────────────────────────────────────
     try:
         import pandas as pd
         import io as _io
@@ -456,6 +477,9 @@ def predict_csv():
             print(f'[NOTIFY] Timeline written tier={timeline["tier"]}')
         except Exception as notify_err:
             print(f'[WARN] Timeline generation failed (non-fatal): {notify_err}')
+
+        # Consume one report credit for single-plan users (only on full success)
+        consume_single_report(request.user['uid'])
 
         return jsonify({
             "success":       True,

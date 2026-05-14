@@ -145,3 +145,38 @@ export async function syncWithBackend(user) {
     return null;
   }
 }
+
+/**
+ * Easy Global Test Function for Email Notifications
+ * Type testVexisEmail() in your browser console!
+ */
+window.testVexisEmail = async function() {
+  try {
+    const user = auth.currentUser;
+    if (!user) {
+      console.error("You are not logged in!");
+      return;
+    }
+    console.log("🔑 Getting auth token...");
+    const token = await user.getIdToken();
+    
+    console.log("✉️ Sending request to test email endpoint...");
+    const res = await fetch('https://vexis-backend-kklg.onrender.com/api/notifications/test', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token
+      },
+      body: JSON.stringify({
+        vehicle_name: "Test Honda Civic",
+        vehicle_model: "2024"
+      })
+    });
+    const data = await res.json();
+    console.log("📥 Result:", data);
+    alert(data.message || data.error || JSON.stringify(data));
+  } catch (e) {
+    console.error("❌ Failed:", e);
+    alert("Error: " + e.message);
+  }
+};
