@@ -134,11 +134,12 @@ def predict_batch():
     sub = check_subscription(request.user['uid'])
     if not sub.get('active'):
         return jsonify({
-            'error':            'subscription_required',
-            'message':          'An active subscription is required for AI analysis.',
+            'error':               'subscription_required',
+            'message':             'An active subscription is required for AI analysis.',
             'subscription_active': False,
         }), 402
     # ──────────────────────────────────────────────────────────────────────
+    try:
         from datetime import datetime
         data         = request.get_json()
         rows         = data.get('rows', [])
