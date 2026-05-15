@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site": "vexis-527f2",
     "public": "frontend",
     "ignore": [
       "firebase.json",

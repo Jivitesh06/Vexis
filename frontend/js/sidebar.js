@@ -7,7 +7,7 @@ import {
   logout, getUser,
   showToast, initSocketIO,
   updateOBDStatusBanner, getOBDStatus,
-  initRevealAnimations
+  initRevealAnimations, getUserNotifications
 } from './api.js';
 import { waitForUser, syncWithBackend, auth, db, doc, onSnapshot } from './firebase.js';
 
@@ -306,6 +306,86 @@ function handleRoute() {
 }
 
 handleRoute();
+
+// ── Notifications Logic ────────────────────────────────────────────
+const notifBtn = document.getElementById('notif-btn');
+const notifDropdown = document.getElementById('notif-dropdown');
+const notifBadge = document.getElementById('notif-badge');
+const notifList = document.getElementById('notif-list');
+
+if (notifBtn && notifDropdown) {
+  // Toggle dropdown
+  notifBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    notifDropdown.classList.toggle('open');
+  });
+
+  // Close when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!notifDropdown.contains(e.target) && !notifBtn.contains(e.target)) {
+      notifDropdown.classList.remove('open');
+    }
+  });
+
+  // Fetch and render notifications
+  async function loadNotifications() {
+    try {
+      const res = await getUserNotifications();
+      if (!res.success) return;
+
+      const notifs = res.notifications || [];
+      if (notifs.length === 0) {
+        notifBadge.style.display = 'none';
+        notifList.innerHTML = `<div class="notif-empty">No new notifications</div>`;
+        return;
+      }
+
+      // Show badge
+      notifBadge.style.display = 'flex';
+      notifBadge.textContent = notifs.length > 9 ? '9+' : notifs.length;
+
+      // Render list
+      let html = '';
+      notifs.forEach(n => {
+        let iconSvg = '';
+        if (n.type === 'critical') iconSvg = '⚠️';
+        else if (n.type === 'warning') iconSvg = '⚡';
+        else iconSvg = '💡';
+
+        // Format relative time (e.g., "2h ago")
+        const date = new Date(n.timestamp);
+        let timeStr = date.toLocaleDateString();
+        const diffMs = Date.now() - date.getTime();
+        if (diffMs < 86400000 && diffMs > 0) {
+          const hrs = Math.floor(diffMs / 3600000);
+          timeStr = hrs > 0 ? `${hrs}h ago` : 'Just now';
+        }
+
+        html += `
+          <div class="notif-item">
+            <div class="notif-icon ${n.type}">${iconSvg}</div>
+            <div class="notif-content">
+              <div class="notif-title">
+                <span>${n.title}</span>
+                <span class="notif-time">${timeStr}</span>
+              </div>
+              <p class="notif-message">${n.message}</p>
+              <span class="notif-vehicle">${n.vehicle_name}</span>
+            </div>
+          </div>
+        `;
+      });
+      notifList.innerHTML = html;
+    } catch (err) {
+      console.error("Failed to load notifications:", err);
+      notifList.innerHTML = `<div class="notif-empty">Failed to load notifications</div>`;
+    }
+  }
+
+  // Load after a small delay to let page render
+  setTimeout(loadNotifications, 1000);
+}
+
 
 // ── Expose for cross-module use ────────────────────────────────────
 window.loadSection   = loadSection;

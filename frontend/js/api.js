@@ -339,3 +339,8 @@ export async function disconnectOBD() {
 export async function getOBDStatus() {
   return await apiGet('/obd/status');
 }
+
+// ── 20. getUserNotifications ───────────────────────────────────────
+export async function getUserNotifications() {
+  return await apiGet('/notifications');
+}

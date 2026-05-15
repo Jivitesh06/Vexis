@@ -18,6 +18,89 @@ def keep_alive():
     """Lightweight endpoint to keep Render from sleeping on free tier."""
     return jsonify({'status': 'alive', 'ts': datetime.utcnow().isoformat()}), 200
 
+# ── GET /api/notifications ───────────────────────────────────────────────────
+@notifications_bp.route('/notifications', methods=['GET'])
+@firebase_required
+def get_user_notifications():
+    """Fetches user-specific vehicle notifications based on service intelligence."""
+    try:
+        from firebase_admin import firestore
+        db = firestore.client()
+        uid = request.user['uid']
+        
+        vehicles_ref = db.collection('vehicles').where('userId', '==', uid).stream()
+        vehicles = [v.to_dict() | {'id': v.id} for v in vehicles_ref]
+        
+        notifications = []
+        
+        for v in vehicles:
+            meta_doc = db.collection('vehicles').document(v['id']).collection('notification_meta').document('current').get()
+            if not meta_doc.exists:
+                continue
+                
+            meta = meta_doc.to_dict()
+            veh_name = v.get('name', 'Unknown Vehicle')
+            
+            # Extract risks
+            risks = meta.get('component_risks', [])
+            for r in risks:
+                notifications.append({
+                    'id': f"risk_{v['id']}_{r.get('system')}",
+                    'vehicle_id': v['id'],
+                    'vehicle_name': veh_name,
+                    'type': 'critical' if r.get('risk_level') == 'CRITICAL' else 'warning',
+                    'title': f"{str(r.get('system', '')).title()} Issue",
+                    'message': f"{r.get('issue')} (Confidence: {r.get('confidence')})",
+                    'timestamp': meta.get('generated_at', datetime.utcnow().isoformat())
+                })
+            
+            # Extract prediction
+            pred = meta.get('prediction', {})
+            if pred.get('needs_service_now'):
+                notifications.append({
+                    'id': f"srv_{v['id']}",
+                    'vehicle_id': v['id'],
+                    'vehicle_name': veh_name,
+                    'type': 'critical',
+                    'title': 'Service Required Immediately',
+                    'message': f"Overall score is {int(meta.get('overall_score', 0))}/100. Please service your vehicle.",
+                    'timestamp': meta.get('generated_at', datetime.utcnow().isoformat())
+                })
+            elif pred.get('days_until_poor') is not None and pred.get('days_until_poor') <= 7:
+                notifications.append({
+                    'id': f"srv_warn_{v['id']}",
+                    'vehicle_id': v['id'],
+                    'vehicle_name': veh_name,
+                    'type': 'warning',
+                    'title': 'Upcoming Service Recommended',
+                    'message': f"Score dropping fast. Estimated poor health in {pred.get('days_until_poor')} days.",
+                    'timestamp': meta.get('generated_at', datetime.utcnow().isoformat())
+                })
+                
+            # Extract service recommendations (limit to 1 or 2 so we don't spam)
+            recs = meta.get('service_recommendations', [])
+            for i, rec in enumerate(recs[:2]):
+                notifications.append({
+                    'id': f"rec_{v['id']}_{i}",
+                    'vehicle_id': v['id'],
+                    'vehicle_name': veh_name,
+                    'type': 'info',
+                    'title': 'Maintenance Tip',
+                    'message': rec,
+                    'timestamp': meta.get('generated_at', datetime.utcnow().isoformat())
+                })
+
+        # Sort notifications by urgency (critical first) then timestamp
+        type_priority = {'critical': 0, 'warning': 1, 'info': 2}
+        notifications.sort(key=lambda x: (type_priority.get(x['type'], 3), x['timestamp']), reverse=False)
+        
+        return jsonify({'success': True, 'notifications': notifications}), 200
+
+    except Exception as e:
+        print(f"[Notifications API Error] {e}")
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 # ── Dedup guard — prevents double-run if cron-job.org retries ────────────────
 _cron_lock = threading.Lock()
