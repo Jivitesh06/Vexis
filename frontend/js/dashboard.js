@@ -1063,44 +1063,48 @@ function wireOBDHandlers() {
         showToast('Connect OBD scanner first!', 'error');
         return;
       }
-      showState('collecting');
-      startTipRotation();
 
-      startAnalysis(
-        selectedDuration,
-        // onProgress
-        progress => updateCollectingUI(progress),
-        // onComplete
-        async (buffer, error) => {
-          if (tipTimer) clearInterval(tipTimer);
+      // ── Subscription gate ────────────────────────────────────────
+      requireSubscription(() => {
+        showState('collecting');
+        startTipRotation();
 
-          if (error) {
-            showToast(error, 'error');
-            showState('ready');
-            return;
+        startAnalysis(
+          selectedDuration,
+          // onProgress
+          progress => updateCollectingUI(progress),
+          // onComplete
+          async (buffer, error) => {
+            if (tipTimer) clearInterval(tipTimer);
+
+            if (error) {
+              showToast(error, 'error');
+              showState('ready');
+              return;
+            }
+            if (!buffer || buffer.length < 5) {
+              showToast('Not enough data collected. Keep driving!', 'error');
+              showState('ready');
+              return;
+            }
+
+            showToast(`Analyzing ${buffer.length} readings...`, 'info');
+
+            try {
+              const result = await apiPost('/predict/batch', {
+                rows:             buffer,
+                duration_seconds: selectedDuration
+              });
+              showState('results');
+              renderResults(result);
+              showToast(`Analysis complete! Score: ${result.overall_score}/100`, 'success');
+            } catch (err) {
+              showToast('Analysis failed: ' + err.message, 'error');
+              showState('ready');
+            }
           }
-          if (!buffer || buffer.length < 5) {
-            showToast('Not enough data collected. Keep driving!', 'error');
-            showState('ready');
-            return;
-          }
-
-          showToast(`Analyzing ${buffer.length} readings...`, 'info');
-
-          try {
-            const result = await apiPost('/predict/batch', {
-              rows:             buffer,
-              duration_seconds: selectedDuration
-            });
-            showState('results');
-            renderResults(result);
-            showToast(`Analysis complete! Score: ${result.overall_score}/100`, 'success');
-          } catch (err) {
-            showToast('Analysis failed: ' + err.message, 'error');
-            showState('ready');
-          }
-        }
-      );
+        );
+      });
     });
   }
 
