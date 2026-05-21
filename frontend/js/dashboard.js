@@ -30,6 +30,8 @@ import {
   getStatus        as getSerialStatus
 } from './obd_serial.js';
 
+import { requireSubscription } from './payments.js';
+
 
 // ── Live polling state ─────────────────────────────────────────────
 let metricsHistory = {};
@@ -2349,95 +2351,99 @@ function openVehicleReportModal(vehicle) {
   });
 
   // ── Generate Report ────────────────────────────────────────────────
-  generateBtn.addEventListener('click', async () => {
+  generateBtn.addEventListener('click', () => {
     if (!obdConnected) { setStatus('error', 'Please connect OBD first'); return; }
-    const durationSec = parseInt(modal.querySelector('input[name="vr-dur"]:checked').value);
 
-    generateBtn.disabled = true;
-    connectBtn.disabled  = true;
-    progArea.style.display = 'block';
-    obdRows = [];
-    collecting = true;
+    requireSubscription(async () => {
+      const durationSec = parseInt(modal.querySelector('input[name="vr-dur"]:checked').value);
 
-    setStatus('info', `⏳ Collecting ${durationSec/60} minute(s) of OBD data…`);
+      generateBtn.disabled = true;
+      connectBtn.disabled  = true;
+      progArea.style.display = 'block';
+      obdRows = [];
+      collecting = true;
 
-    // Start OBD live stream and collect rows
-    startTime = Date.now();
-    window.onOBDData = (data) => {
-      if (collecting) obdRows.push(data);
-    };
+      setStatus('info', `⏳ Collecting ${durationSec/60} minute(s) of OBD data…`);
 
-    // Timer display
-    timerInterval = setInterval(() => {
-      const elapsed = (Date.now() - startTime) / 1000;
-      const pct = Math.min(100, (elapsed / durationSec) * 100);
-      progFill.style.width = pct + '%';
-      const m = Math.floor(elapsed/60), s = Math.floor(elapsed%60);
-      timerEl.textContent = `${m}:${String(s).padStart(2,'0')}`;
-    }, 500);
+      // Start OBD live stream and collect rows
+      startTime = Date.now();
+      window.onOBDData = (data) => {
+        if (collecting) obdRows.push(data);
+      };
 
-    await startLiveStream();
+      // Timer display
+      timerInterval = setInterval(() => {
+        const elapsed = (Date.now() - startTime) / 1000;
+        const pct = Math.min(100, (elapsed / durationSec) * 100);
+        progFill.style.width = pct + '%';
+        const m = Math.floor(elapsed/60), s = Math.floor(elapsed%60);
+        timerEl.textContent = `${m}:${String(s).padStart(2,'0')}`;
+      }, 500);
 
-    // Wait for duration
-    await new Promise(r => setTimeout(r, durationSec * 1000));
+      await startLiveStream();
 
-    collecting = false;
-    clearInterval(timerInterval);
-    progFill.style.width = '100%';
+      // Wait for duration
+      await new Promise(r => setTimeout(r, durationSec * 1000));
 
-    setStatus('info', `📊 Analysing ${obdRows.length} OBD readings via ML…`);
+      collecting = false;
+      clearInterval(timerInterval);
+      progFill.style.width = '100%';
 
-    try {
-      const user  = auth.currentUser;
-      const token = await user.getIdToken(true);
+      setStatus('info', `📊 Analysing ${obdRows.length} OBD readings via ML…`);
 
-      const res = await fetch(`${API_BASE}/predict/batch`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({
-          rows:           obdRows,
-          duration_seconds: durationSec,
-          vehicle_id:     vehicle.id,
-          vehicle_name:   vehicle.name,
-          vehicle_model:  vehicle.model
-        })
-      });
+      try {
+        const user  = auth.currentUser;
+        const token = await user.getIdToken(true);
 
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || 'Analysis failed');
-      }
-
-      const result = await res.json();
-
-      // Download PDF
-      if (result.report_id) {
-        const pdfRes = await fetch(`${API_BASE}/reports/download/${result.report_id}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
+        const res = await fetch(`${API_BASE}/predict/batch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({
+            rows:           obdRows,
+            duration_seconds: durationSec,
+            vehicle_id:     vehicle.id,
+            vehicle_name:   vehicle.name,
+            vehicle_model:  vehicle.model
+          })
         });
-        if (pdfRes.ok) {
-          const blob = await pdfRes.blob();
-          const url  = URL.createObjectURL(blob);
-          const a    = document.createElement('a');
-          a.href = url; a.download = `vexis_${vehicle.name.replace(/\s/g,'_')}_report.pdf`;
-          document.body.appendChild(a); a.click();
-          document.body.removeChild(a); URL.revokeObjectURL(url);
+
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || 'Analysis failed');
         }
+
+        const result = await res.json();
+
+        // Download PDF
+        if (result.report_id) {
+          const pdfRes = await fetch(`${API_BASE}/reports/download/${result.report_id}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (pdfRes.ok) {
+            const blob = await pdfRes.blob();
+            const url  = URL.createObjectURL(blob);
+            const a    = document.createElement('a');
+            a.href = url; a.download = `vexis_${vehicle.name.replace(/\s/g,'_')}_report.pdf`;
+            document.body.appendChild(a); a.click();
+            document.body.removeChild(a); URL.revokeObjectURL(url);
+          }
+        }
+
+        setStatus('success', `✅ Report generated! Score: ${Math.round(result.overall_score)}/100 (${result.health_category}). PDF downloading…`);
+        showToast(`Report for ${vehicle.name} saved to Past Reports!`, 'success');
+
+        generateBtn.textContent = '✅ Done — View Past Reports';
+        generateBtn.disabled    = false;
+        generateBtn.onclick     = () => { modal.remove(); window.loadSection?.('reports'); };
+
+      } catch(e) {
+        setStatus('error', 'Analysis failed: ' + e.message);
+        generateBtn.disabled = false;
+        generateBtn.textContent = '🔬 Try Again';
       }
-
-      setStatus('success', `✅ Report generated! Score: ${Math.round(result.overall_score)}/100 (${result.health_category}). PDF downloading…`);
-      showToast(`Report for ${vehicle.name} saved to Past Reports!`, 'success');
-
-      generateBtn.textContent = '✅ Done — View Past Reports';
-      generateBtn.disabled    = false;
-      generateBtn.onclick     = () => { modal.remove(); window.loadSection?.('reports'); };
-
-    } catch(e) {
-      setStatus('error', 'Analysis failed: ' + e.message);
-      generateBtn.disabled = false;
-      generateBtn.textContent = '🔬 Try Again';
-    }
+    });
   });
+
 
   // ── Close ──────────────────────────────────────────────────────────
   modal.querySelector('#vr-close').addEventListener('click', () => {
